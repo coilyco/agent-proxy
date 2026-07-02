@@ -86,15 +86,17 @@ PROXY_TOWER_BASE_URL=http://<tower>:11434 ward serve  # proxy on 127.0.0.1:8080
 ward test                                             # 26 tests, tower not required
 
 # with the proxy running and a tower reachable:
-TOWER=<tower> ward proof                               # 32767 (direct) vs 49151 (proxy)
-TOWER=<tower> ward reliability --target proxy --turns 6
+TOWER=<tower> ward exec proof                          # 32767 (direct) vs 49151 (proxy)
+TOWER=<tower> ward exec reliability -- --target proxy --turns 6
 ```
 
 `scripts/truncation_proof.py` reproduces the leg-01 truncation test through the
 proxy. `scripts/reliability_loop.py` is the leg-05 harness scaffold: it scores a
 context-growing, tool-using loop with the proxy's own `validate_response` and
-emits a reliability percentage and failure histogram. Both resolve the tower via
-`TOWER` / `PROXY_TOWER_BASE_URL` / SSM and never write the FQDN into a file.
+emits a reliability percentage and failure histogram. It can also write a
+durable markdown or JSON report with `--markdown-report` and `--json-report`.
+Both resolve the tower via `TOWER` / `PROXY_TOWER_BASE_URL` / SSM and never
+write the FQDN into a file.
 
 ## Metrics
 
@@ -102,6 +104,11 @@ emits a reliability percentage and failure histogram. Both resolve the tower via
 `llm_retries_total`, `llm_fallbacks_total`, `llm_circuit_state`,
 `llm_truncation_avoided_total`, `llm_validation_failures_total`,
 `llm_prompt_tokens`, `llm_upstream_latency_seconds`.
+
+## M2 measurement status
+
+The harness and its offline tests are in place, but the durable M2 baseline-to-
+after measurement still needs a live tower run with SSM-backed resolution.
 
 ## Out of scope here
 
