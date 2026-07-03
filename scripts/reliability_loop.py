@@ -26,6 +26,10 @@ Usage::
 
 (``ward exec reliability`` and, via the unknown-verb fallback, bare
 ``ward reliability`` both resolve to this script; args ride after ``--``.)
+
+``RELIABILITY_DIRECT_MODEL`` overrides the tower tag the ``direct`` target asks
+for (default ``qwen3-coder:30b``) so the harness runs where the present tags
+differ from the default model table.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -43,6 +48,14 @@ from _endpoints import proxy_base_url, tower_base_url
 
 from app.resilience import validate_response
 from app.upstream import UpstreamResult
+
+# The tower tag the `direct` target asks for. Defaults to the standard alias but
+# is overridable so the harness runs wherever the present tags differ from the
+# default table (e.g. a local ollama serving qwen3:4b instead of qwen3-coder:30b).
+# For a clean apples-to-apples baseline-vs-after, point this at the same base
+# model the proxy's fast-think resolves to - the only intended difference is the
+# injected num_ctx.
+_DIRECT_MODEL = os.environ.get("RELIABILITY_DIRECT_MODEL", "qwen3-coder:30b")
 
 # A file-shaped blob so each accumulated tool output pushes context upward. About
 # ~8k tokens per blob; a couple of these already overflow the 32k default.
@@ -73,7 +86,7 @@ _SYSTEM = (
 def _endpoint_and_model(target: str) -> tuple[str, str]:
     if target == "proxy":
         return f"{proxy_base_url()}/v1/chat/completions", "fast-think"
-    return f"{tower_base_url()}/v1/chat/completions", "qwen3-coder:30b"
+    return f"{tower_base_url()}/v1/chat/completions", _DIRECT_MODEL
 
 
 def _to_result(openai_resp: dict) -> UpstreamResult:

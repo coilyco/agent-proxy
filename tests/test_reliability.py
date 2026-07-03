@@ -67,6 +67,25 @@ def test_score_malformed_toolcall():
 
 
 # --------------------------------------------------------------------------- #
+# _endpoint_and_model - target -> (url, model) resolution
+# --------------------------------------------------------------------------- #
+
+
+def test_proxy_target_uses_fast_think():
+    url, model = rl._endpoint_and_model("proxy")
+    assert model == "fast-think" and url.endswith("/v1/chat/completions")
+
+
+def test_direct_target_model_is_overridable():
+    # The tower tag the direct target asks for is env-overridable so the harness
+    # runs where the present tags differ from the default table. Patch the tower
+    # resolver so the test needs no TOWER/SSM to resolve an endpoint.
+    with patch.object(rl, "tower_base_url", return_value="http://tower:11434"):
+        _, model = rl._endpoint_and_model("direct")
+    assert model == rl._DIRECT_MODEL
+
+
+# --------------------------------------------------------------------------- #
 # _score_turn - the HTTP error -> failure-reason mapping
 # --------------------------------------------------------------------------- #
 
