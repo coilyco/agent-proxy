@@ -14,7 +14,7 @@ Issue #111, in Kai's words:
 
 The proxy detecting this for itself is
 [saturation-failover.md](saturation-failover.md), and how long that detection
-sticks is [saturation-stickiness.md](saturation-stickiness.md). This page is the
+sticks is [saturation-stickiness.md](saturation-failover.md). This page is the
 other half: the caller saying so outright, because Echo can know the tower is
 behind a game before any threshold has had a chance to trip.
 
@@ -58,9 +58,9 @@ Every request carrying the header logs `request.backend_preference` with the
 requested name and whether it applied, so a preference that silently does
 nothing - a typo, or a backend not in that route's chain - is visible rather
 than mysterious. Which backend actually served is already on the spans as
-`agentproxy.backend`, per [backend-regime.md](backend-regime.md).
+`agentproxy.backend`, per [backend-regime.md](backend-catalog.md).
 
 ## See also
 
 - [`saturation-failover.md`](saturation-failover.md) - the proxy noticing by itself.
-- [`saturation-stickiness.md`](saturation-stickiness.md) - how long that lasts.
+- [`saturation-stickiness.md`](saturation-failover.md) - how long that lasts.

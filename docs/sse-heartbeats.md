@@ -74,5 +74,5 @@ tick never cancels the chunk it was waiting for.
 
 ## See also
 
-- [`backend-regime.md`](backend-regime.md) - the `regime` field on `attempt`.
+- [`backend-regime.md`](backend-catalog.md) - the `regime` field on `attempt`.
 - [`request-deadline.md`](request-deadline.md) - the proxy-side deadline.

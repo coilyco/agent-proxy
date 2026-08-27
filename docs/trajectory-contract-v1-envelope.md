@@ -71,4 +71,4 @@ Every event is a UTF-8 JSON object with these fields. Names ending in `_ref` ide
 ```
 
 Identity, time, and correlation rules are in
-[trajectory-contract-v1-identity.md](trajectory-contract-v1-identity.md).
+[trajectory-contract-v1.md](trajectory-contract-v1.md).

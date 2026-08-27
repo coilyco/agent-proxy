@@ -34,7 +34,7 @@ class Route:
     readiness_targets: tuple[DirectTarget, ...] = ()
     enabled: bool = True
     # The upstream model's real context window, when Deploy knows it (#115).
-    # Contract: docs/route-registry-contract.md.
+    # Contract: docs/route-registry.md.
     context_window: int | None = None
 
 

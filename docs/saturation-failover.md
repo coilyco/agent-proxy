@@ -41,8 +41,6 @@ first-token signal to observe, so it bounds the whole attempt: set it above the
 slowest legitimate completion on that route, or a long answer will be mistaken
 for a stalled one.
 
-How long a saturated backend stays skipped, and on what count, is
-[saturation-stickiness.md](saturation-stickiness.md).
 
 ## Deadline versus saturation
 
@@ -71,9 +69,36 @@ The attempt span carries `agentproxy.outcome=saturated` and
 
 It reacts rather than prevents. Option 3 in #108, capacity derived from GPU
 utilisation, would stop the request being sent at all; its operator-supplied
-half is the `regime` field in [backend-regime.md](backend-regime.md) and the
+half is the `regime` field in [backend-regime.md](backend-catalog.md) and the
 automatic half is open. Nothing here probes capacity either: `/api/tags` still
 reports presence, and replacing it with a tiny real completion is option 1.
 
-See also [`backend-regime.md`](backend-regime.md) and
+See also [`backend-regime.md`](backend-catalog.md) and
 [`request-deadline.md`](request-deadline.md).
+
+Issue #111 asked for an automatic fallback when a model is *persistently*
+unavailable, and for that choice to *stick*. It also said both words needed
+defining. This is the threshold half of that answer. The explicit signal - a
+caller telling the proxy to prefer the fallback outright - is still open on
+that issue and needs a product decision.
+
+## The two definitions
+
+Saturation counts and cools on its own terms, because a busy backend is not a
+broken one. `PROXY_SATURATION_THRESHOLD` (default 2) is the consecutive count
+that opens the breaker, lower than the failure threshold because each saturation
+costs a full slow-path wait. `PROXY_SATURATION_COOLDOWN` (default 900) is how
+long it sticks, because the condition behind it is a play session rather than a
+blip and a 30-second cooldown would re-probe a busy GPU roughly 120 times an
+hour. The count is consecutive, so one good turn clears it, and half-open
+probing still recovers without a human.
+
+## What is still open
+
+The caller can now say so outright with `X-Prefer-Backend` - see
+[prefer-backend.md](prefer-backend.md). What is still open on #111 is the
+*shared* version: an admin endpoint pinning a route for every caller until an
+expiry, which fits an operator flipping a switch before a game and sits less
+comfortably with Ward owning authorization.
+
+## See also

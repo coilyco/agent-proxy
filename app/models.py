@@ -23,9 +23,9 @@ class Backend:
     injects_num_ctx: bool = True
     timeout: float | None = None  # None -> use the global request_timeout.
     # The backend's OLLAMA_NUM_PARALLEL (issue #33). 1 leaves injection
-    # unchanged. Scaling rationale: docs/context-safety-settings.md.
+    # unchanged. Scaling rationale: docs/context-budget-per-model.md.
     num_parallel: int = 1
-    # Capacity state at dispatch (#109). Docs: docs/backend-regime.md.
+    # Capacity state at dispatch (#109). Docs: docs/backend-catalog.md.
     regime: str = "unknown"
 
 

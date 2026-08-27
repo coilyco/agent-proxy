@@ -12,11 +12,11 @@ Part of [FEATURES](FEATURES.md).
 
 - [`architecture-v2.md`](architecture-v2.md) states ownership boundaries and the migration inventory.
 - [`trajectory-contract-v1.md`](trajectory-contract-v1.md) specifies the event contract.
-- [`trajectory-schema-package.md`](trajectory-schema-package.md) documents package compatibility and producer or consumer use.
+- [`trajectory-schema-package.md`](trajectory-materialization.md) documents package compatibility and producer or consumer use.
 - [`trajectory-retention.md`](trajectory-retention.md) documents intake, raw retention, replay, and recovery.
 - [`trajectory-materialization.md`](trajectory-materialization.md) documents deterministic assembly and re-materialization.
 - [`evaluation-records.md`](evaluation-records.md) documents evaluation, annotation, and intervention evidence.
-- [`dataset-exports.md`](dataset-exports.md) documents schemas, manifests, split safety, and reproducibility.
+- [`dataset-exports.md`](evaluation-records.md) documents schemas, manifests, split safety, and reproducibility.
 - [`operational-views.md`](operational-views.md) documents queries, dossiers, access, freshness, and backfill.
 - [`litellm-parity.md`](litellm-parity.md) documents the standalone decision and cutover gates.
 - [`route-registry.md`](route-registry.md) documents logical routing and rollback.

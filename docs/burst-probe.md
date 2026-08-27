@@ -70,5 +70,5 @@ start`, which still works and now agrees with the simpler number.
 
 ## See also
 
-- [`backend-regime.md`](backend-regime.md) - tagging the run as idle.
+- [`backend-regime.md`](backend-catalog.md) - tagging the run as idle.
 - Issue #110 - the admission limiter that must be off for this to mean anything.

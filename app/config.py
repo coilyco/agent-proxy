@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     proxy_port: int = Field(default=8080)
     log_level: str = Field(default="INFO")
 
-    # Streamable HTTP MCP transport. Allowlist rules: docs/context-safety-settings.md.
+    # Streamable HTTP MCP transport. Allowlist rules: docs/context-budget-per-model.md.
     mcp_allowed_hosts: str = Field(default="127.0.0.1:*,localhost:*,testserver")
     mcp_allowed_origins: str = Field(default="http://127.0.0.1:*,http://localhost:*,http://[::1]:*")
 
@@ -110,15 +110,15 @@ class Settings(BaseSettings):
     context_cost_ceiling: int = Field(default=0, ge=0)
 
     # The operating regime every backend reports unless its spec overrides it
-    # (#109). Values and who sets them: docs/backend-regime.md.
+    # (#109). Values and who sets them: docs/backend-catalog.md.
     backend_regime: str = Field(default="unknown")
 
     # Must match the backend's real OLLAMA_NUM_PARALLEL (issue #33).
-    # Why the injected value is scaled: docs/context-safety-settings.md.
+    # Why the injected value is scaled: docs/context-budget-per-model.md.
     ollama_num_parallel: int = Field(default=1)
 
     # Fail-loud verification of the delivered context (issue #33).
-    # Detection rule and both outcomes: docs/context-safety-settings.md.
+    # Detection rule and both outcomes: docs/context-budget-per-model.md.
     context_truncation_tolerance: float = Field(default=0.15)
     fail_on_context_truncation: bool = Field(default=False)
 
@@ -133,7 +133,7 @@ class Settings(BaseSettings):
     ward_skill_use_input: str = Field(default="")
 
     # Cold-path trajectory retention. Deployments mount this path on
-    # durable storage. See docs/context-safety-settings.md.
+    # durable storage. See docs/context-budget-per-model.md.
     trajectory_db_path: str = Field(default="./data/trajectory.sqlite3")
     trajectory_ingest_queue_size: int = Field(default=256, ge=1)
     # Request-path emission is opt-in until the deployment mounts the database
@@ -146,12 +146,12 @@ class Settings(BaseSettings):
     tower_port: int = Field(default=11434)
 
     # Backend chain override (issue #32). Spec shape and intent:
-    # docs/context-safety-settings.md.
+    # docs/context-budget-per-model.md.
     backends_json: str = Field(default="")
     backends_file: str = Field(default="")
 
     # Deploy mounts a service-local logical route registry.
-    # Compatibility-mode rules: docs/context-safety-settings.md.
+    # Compatibility-mode rules: docs/context-budget-per-model.md.
     route_registry_file: str = Field(default="")
     route_registry_compatibility_mode: bool = Field(default=True)
     route_upstream_mode: Literal["litellm", "direct"] = Field(default="direct")
