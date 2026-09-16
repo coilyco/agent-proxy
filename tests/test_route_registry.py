@@ -219,3 +219,47 @@ def test_registry_rejects_a_nonsense_context_window(tmp_path):
     )
     with pytest.raises(route_registry.RouteRegistryError, match="context_window"):
         route_registry.load_route_registry(path)
+
+
+DEPLOY_CONTENT_LANE_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "route_registry" / "deploy-content-lane.json"
+)
+
+
+def test_the_registry_deploy_actually_mounts_loads() -> None:
+    """Verbatim copy of services/agent-proxy/chart/files/route-registry.json.
+
+    This exact file crash-looped the ser8 pod: Deploy added a content lane, its
+    renderer emitted a third `content_routes_sha256` provenance digest, and the
+    source allowlist rejected the unknown field at startup. The loader fails
+    closed by design, so a metadata addition on Deploy's side became an outage
+    on the next image roll rather than at the config change that caused it.
+
+    Deliberately asserts loadability and the digests rather than the route list,
+    which churns every time Deploy adds an alias.
+    """
+    registry = route_registry.load_route_registry(DEPLOY_CONTENT_LANE_FIXTURE)
+
+    assert registry.routes
+    assert registry.source["content_routes_sha256"]
+    assert registry.source["service_routes_sha256"]
+    assert registry.source["evaluation_routes_sha256"]
+
+
+def test_an_unheard_of_lane_digest_is_accepted(tmp_path: Path) -> None:
+    """The next lane must not need an agent-proxy release to avoid an outage."""
+    payload = _payload()
+    payload["source"]["telemetry_routes_sha256"] = "9" * 64  # type: ignore[index]
+
+    registry = route_registry.load_route_registry(_write(tmp_path, payload))
+
+    assert registry.source["telemetry_routes_sha256"] == "9" * 64
+
+
+def test_an_unknown_non_digest_source_field_is_still_rejected(tmp_path: Path) -> None:
+    """Only provenance digests are shape-matched. Everything else stays strict."""
+    payload = _payload()
+    payload["source"]["upstream_mode"] = "litellm"  # type: ignore[index]
+
+    with pytest.raises(route_registry.RouteRegistryError, match="unsupported fields"):
+        route_registry.load_route_registry(_write(tmp_path, payload))

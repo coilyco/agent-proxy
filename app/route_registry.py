@@ -14,6 +14,9 @@ REGISTRY_FORMAT = "agent-proxy-route-registry/v1"
 MAX_REGISTRY_BYTES = 1024 * 1024
 KNOWN_DIRECT_RUNTIMES = {"llama.cpp", "ollama"}
 ROUTE_KEY_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*")
+# Provenance digests in the source block, one per Deploy route input. Matched by
+# shape because that list grows on Deploy's side. See docs/route-registry.md.
+_SOURCE_DIGEST_PATTERN = re.compile(r"[a-z][a-z0-9_]*_routes_sha256")
 
 
 class RouteRegistryError(ValueError):
@@ -82,6 +85,9 @@ def _source(value: Any) -> dict[str, str | int]:
         return {}
     if not isinstance(value, dict):
         raise RouteRegistryError("source must be an object")
+    # A per-lane input digest. Deploy mints one per route input it renders from,
+    # so the set grows whenever a lane is added. See docs/route-registry.md.
+    digests = {key for key in value if _SOURCE_DIGEST_PATTERN.fullmatch(key)}
     _keys(
         value,
         {
@@ -91,7 +97,8 @@ def _source(value: Any) -> dict[str, str | int]:
             "service_routes_sha256",
             "sha256",
             "version",
-        },
+        }
+        | digests,
         "source",
     )
     parsed: dict[str, str | int] = {}

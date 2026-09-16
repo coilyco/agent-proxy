@@ -53,9 +53,19 @@ registry.
 }
 ```
 
-The source object records the exact Deploy-owned service and evaluation inputs
-used to generate the mounted registry. Agent Proxy retains both SHA-256 digests
-as provenance while continuing to reject unrecognized source fields.
+The source object records the exact Deploy-owned inputs used to generate the
+mounted registry. Deploy mints one `<lane>_routes_sha256` per route input, so
+the set grows whenever a lane is added, and Agent Proxy accepts any field of
+that shape while continuing to reject every other unrecognized source field.
+
+**That shape match is load-bearing rather than lax.** A provenance digest is
+inert: it records which input produced the registry and changes no routing
+decision, so a lane name this proxy has not heard of tells it nothing it must
+act on. Listing them instead made a metadata addition on Deploy's side into a
+startup failure here, surfacing days later on the next image roll rather than at
+the config change that caused it. An unknown field that could change behaviour,
+such as one naming an upstream mode, is still rejected, because failing closed
+is exactly what that case is for.
 
 `upstream_alias` is sent to LiteLLM. `direct` is optional deployment data for
 the established rollback path. Direct mode currently supports Ollama targets.

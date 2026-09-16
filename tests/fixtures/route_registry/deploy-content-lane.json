@@ -1,0 +1,88 @@
+{
+  "format": "agent-proxy-route-registry/v1",
+  "routes": [
+    {
+      "direct": {
+        "model": "ornith:9b",
+        "runtime": "ollama"
+      },
+      "key": "sirens-echo/default",
+      "readiness_targets": [
+        {
+          "model": "ornith:9b",
+          "runtime": "ollama"
+        },
+        {
+          "model": "ornith:35b",
+          "runtime": "ollama"
+        }
+      ],
+      "upstream_alias": "sirens-echo/default"
+    },
+    {
+      "direct": null,
+      "key": "sirens-echo/deepseek",
+      "upstream_alias": "sirens-echo/deepseek"
+    },
+    {
+      "direct": null,
+      "key": "evaluation/deepseek-v4-flash",
+      "upstream_alias": "evaluation/deepseek-v4-flash"
+    },
+    {
+      "direct": null,
+      "key": "evaluation/deepseek-v4-flash-vision-exp",
+      "upstream_alias": "evaluation/deepseek-v4-flash-vision-exp"
+    },
+    {
+      "direct": null,
+      "key": "evaluation/deepseek-v4-pro",
+      "upstream_alias": "evaluation/deepseek-v4-pro"
+    },
+    {
+      "direct": {
+        "model": "ministral-3:14b",
+        "runtime": "ollama"
+      },
+      "key": "evaluation/ministral-3-14b",
+      "readiness_targets": [
+        {
+          "model": "ministral-3:14b",
+          "runtime": "ollama"
+        }
+      ],
+      "upstream_alias": "evaluation/ministral-3-14b"
+    },
+    {
+      "direct": {
+        "model": "ornith:35b",
+        "runtime": "ollama"
+      },
+      "key": "evaluation/ornith-35b",
+      "readiness_targets": [
+        {
+          "model": "ornith:35b",
+          "runtime": "ollama"
+        }
+      ],
+      "upstream_alias": "evaluation/ornith-35b"
+    },
+    {
+      "direct": null,
+      "key": "content/default",
+      "upstream_alias": "content/default"
+    },
+    {
+      "direct": null,
+      "key": "content/uncensored",
+      "upstream_alias": "content/uncensored"
+    }
+  ],
+  "source": {
+    "content_routes_sha256": "6abebf33fa18b1325c40282260f3e33bca513cd5947365365cb71a8197bcefc9",
+    "evaluation_routes_sha256": "69acadc44c22f3761a29833a81fd1097a72bb3c8bb7f7cabbe074fef448b0b44",
+    "format": "deploy.agent-proxy-routes/v1",
+    "service_routes_sha256": "8422ccca2b3d97fa79cd6db0b733edf916da4984f29f29c955745d54412d14fe",
+    "version": 2
+  }
+}
