@@ -29,7 +29,7 @@ from .obs import (
     request_log_fields,
     get_tracer,
 )
-from .upstream import UpstreamResult
+from .upstream import ToolPolicy, UpstreamResult
 
 
 class QueueBusy(Exception):
@@ -42,6 +42,7 @@ class Job:
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] | None
     options: dict[str, Any] | None
+    tool_policy: ToolPolicy | None = None
     trace_ctx: RequestTraceContext | None = None
     # Defaulted to None only so it can trail trace_ctx in the dataclass; submit()
     # always constructs a Job with a live future, so the awaiting paths guard it.
@@ -95,6 +96,7 @@ class WorkQueue:
         tools,
         options,
         *,
+        tool_policy: ToolPolicy | None = None,
         trace_ctx: RequestTraceContext | None = None,
         deadline: float | None = None,
     ) -> UpstreamResult:
@@ -109,6 +111,7 @@ class WorkQueue:
             messages=messages,
             tools=tools,
             options=options,
+            tool_policy=tool_policy,
             trace_ctx=trace_ctx,
             future=future,
             otel_context=otel_context.get_current(),
@@ -215,6 +218,7 @@ class WorkQueue:
                         job.model,
                         job.messages,
                         tools=job.tools,
+                        tool_policy=job.tool_policy,
                         options=job.options,
                         trace_ctx=job.trace_ctx,
                         deadline=job.deadline,

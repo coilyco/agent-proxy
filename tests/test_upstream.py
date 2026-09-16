@@ -392,3 +392,108 @@ async def test_span_attrs_flow_to_upstream_span_and_log(monkeypatch, backend, ca
     assert log_payload["outcome"] == "ok"
     assert log_payload["backend"] == "tower"
     assert log_payload["ward.run_id"] == "run-1"
+
+
+# The tool-calling contract: what the caller's tool constraints do to the body
+
+
+def _tool_list():
+    return [
+        {
+            "type": "function",
+            "function": {"name": "lookup", "parameters": {"type": "object"}},
+        }
+    ]
+
+
+def test_tool_policy_reaches_an_openai_backend(openai_backend):
+    body = upstream._chat_body(
+        openai_backend,
+        1024,
+        [],
+        stream=False,
+        tools=_tool_list(),
+        tool_policy=upstream.ToolPolicy(choice="required", parallel=False),
+        options=None,
+        span_attrs=None,
+    )
+
+    assert body["tool_choice"] == "required"
+    assert body["parallel_tool_calls"] is False
+
+
+def test_named_function_tool_choice_passes_through_verbatim(openai_backend):
+    choice = {"type": "function", "function": {"name": "lookup"}}
+    body = upstream._chat_body(
+        openai_backend,
+        1024,
+        [],
+        stream=False,
+        tools=_tool_list(),
+        tool_policy=upstream.ToolPolicy(choice=choice),
+        options=None,
+        span_attrs=None,
+    )
+
+    assert body["tool_choice"] == choice
+    assert "parallel_tool_calls" not in body
+
+
+def test_tool_policy_never_reaches_an_ollama_backend(backend):
+    """/api/chat ignores an unknown key, so sending it would read as applied."""
+    body = upstream._chat_body(
+        backend,
+        1024,
+        [],
+        stream=False,
+        tools=_tool_list(),
+        tool_policy=upstream.ToolPolicy(choice="required", parallel=True),
+        options=None,
+        span_attrs=None,
+    )
+
+    assert body["tools"] == _tool_list()
+    assert "tool_choice" not in body
+    assert "parallel_tool_calls" not in body
+
+
+def test_tool_policy_without_tools_sends_nothing(openai_backend):
+    body = upstream._chat_body(
+        openai_backend,
+        1024,
+        [],
+        stream=False,
+        tools=None,
+        tool_policy=upstream.ToolPolicy(choice="required"),
+        options=None,
+        span_attrs=None,
+    )
+
+    assert "tools" not in body
+    assert "tool_choice" not in body
+
+
+def test_seed_lands_under_options_for_ollama_and_top_level_for_openai(backend, openai_backend):
+    ollama_body = upstream._chat_body(
+        backend,
+        1024,
+        [],
+        stream=False,
+        tools=None,
+        options={"seed": 7, "temperature": 0.0},
+        span_attrs=None,
+    )
+    openai_body = upstream._chat_body(
+        openai_backend,
+        1024,
+        [],
+        stream=False,
+        tools=None,
+        options={"seed": 7, "temperature": 0.0},
+        span_attrs=None,
+    )
+
+    assert ollama_body["options"]["seed"] == 7
+    assert "seed" not in ollama_body
+    assert openai_body["seed"] == 7
+    assert "options" not in openai_body

@@ -341,6 +341,23 @@ def _openai_options(options: dict[str, Any] | None) -> dict[str, Any]:
     return mapped
 
 
+@dataclass(frozen=True)
+class ToolPolicy:
+    """The caller's tool-calling constraints, carried beside ``tools``.
+
+    ``tools`` alone says what the model may call. These say whether it must, and
+    how many at once, which is the difference between measuring a roster and
+    measuring a model's willingness to use one. New OpenAI tool-contract fields
+    arrive here rather than as another parameter through nine signatures.
+    """
+
+    choice: Any | None = None
+    parallel: bool | None = None
+
+    def is_empty(self) -> bool:
+        return self.choice is None and self.parallel is None
+
+
 def _chat_body(
     backend: Backend,
     num_ctx: int,
@@ -348,6 +365,7 @@ def _chat_body(
     *,
     stream: bool,
     tools: list[dict[str, Any]] | None,
+    tool_policy: ToolPolicy | None = None,
     options: dict[str, Any] | None,
     span_attrs: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -377,6 +395,13 @@ def _chat_body(
             body["metadata"] = metadata
     if tools:
         body["tools"] = tools
+        # Ollama's /api/chat has neither field and ignores an unknown key, so
+        # the request path refuses. See docs/proxy-request-path.md.
+        if backend.dialect != "ollama" and tool_policy is not None:
+            if tool_policy.choice is not None:
+                body["tool_choice"] = tool_policy.choice
+            if tool_policy.parallel is not None:
+                body["parallel_tool_calls"] = tool_policy.parallel
     return body
 
 
@@ -489,6 +514,7 @@ async def chat(
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
+    tool_policy: ToolPolicy | None = None,
     options: dict[str, Any] | None = None,
     span_attrs: dict[str, Any] | None = None,
 ) -> UpstreamResult:
@@ -499,6 +525,7 @@ async def chat(
         messages,
         stream=False,
         tools=tools,
+        tool_policy=tool_policy,
         options=options,
         span_attrs=span_attrs,
     )
@@ -610,6 +637,7 @@ async def chat_stream(
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
+    tool_policy: ToolPolicy | None = None,
     options: dict[str, Any] | None = None,
     span_attrs: dict[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -620,6 +648,7 @@ async def chat_stream(
         messages,
         stream=True,
         tools=tools,
+        tool_policy=tool_policy,
         options=options,
         span_attrs=span_attrs,
     )

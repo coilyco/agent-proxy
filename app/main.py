@@ -219,7 +219,37 @@ def _options_from_openai(body: dict[str, Any]) -> dict[str, Any]:
         opts["num_predict"] = v
     if (v := body.get("stop")) is not None:
         opts["stop"] = v if isinstance(v, list) else [v]
+    # Both dialects take a seed where this dict lands. See
+    # docs/proxy-request-path.md.
+    if (v := body.get("seed")) is not None:
+        opts["seed"] = v
     return opts
+
+
+def _unsupported_tool_policy(model, tool_policy: upstream.ToolPolicy) -> str:
+    """Name a tool constraint no backend on this route's chain can apply.
+
+    Ollama's ``/api/chat`` accepts neither ``tool_choice`` nor
+    ``parallel_tool_calls`` and ignores an unknown top-level key, so a harness
+    that asked the model to call a tool would get a run that never called one and
+    nothing that said why. ``"auto"`` is ollama's own behavior, so it passes.
+    """
+    if tool_policy.is_empty():
+        return ""
+    if not any(backend.dialect == "ollama" for backend in model.backends):
+        return ""
+    unsupported = []
+    if tool_policy.choice is not None and tool_policy.choice != "auto":
+        unsupported.append("tool_choice")
+    if tool_policy.parallel is not None:
+        unsupported.append("parallel_tool_calls")
+    if not unsupported:
+        return ""
+    return (
+        f"{' and '.join(unsupported)} cannot be applied on route '{model.name}', "
+        f"which is served by an ollama-dialect backend. Remove the constraint or "
+        f"select a route whose backend honors it."
+    )
 
 
 def _finish_reason(result: upstream.UpstreamResult) -> str:
@@ -234,15 +264,23 @@ def _finish_reason(result: upstream.UpstreamResult) -> str:
 
 def _openai_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """ollama tool calls (arguments as a dict) -> OpenAI shape (arguments as a
-    JSON string, each with a synthetic id)."""
+    JSON string), keeping a backend-issued id and synthesizing one only when the
+    backend supplied none.
+
+    Ollama issues no id, so one has to be made up. An OpenAI-dialect backend does
+    issue one, and overwriting it broke correlation with that backend's own logs
+    and disagreed with the streaming path, which has always preferred the real
+    id.
+    """
     out = []
     for i, call in enumerate(tool_calls):
         fn = call.get("function", call)
         args = fn.get("arguments", {})
         args_str = args if isinstance(args, str) else json.dumps(args)
+        call_id = call.get("id") if isinstance(call, dict) else None
         out.append(
             {
-                "id": f"call_{uuid.uuid4().hex[:12]}_{i}",
+                "id": str(call_id) if call_id else f"call_{uuid.uuid4().hex[:12]}_{i}",
                 "type": "function",
                 "function": {"name": fn.get("name", ""), "arguments": args_str},
             }
@@ -774,6 +812,7 @@ async def _stream_chat(
     options,
     model_name: str,
     *,
+    tool_policy: upstream.ToolPolicy | None = None,
     trace_ctx: RequestTraceContext,
     request_span: Any | None,
     lifecycle: RequestLifecycle,
@@ -835,6 +874,7 @@ async def _stream_chat(
                     model,
                     messages,
                     tools=tools,
+                    tool_policy=tool_policy,
                     options=options,
                     trace_ctx=trace_ctx,
                     deadline=deadline,
@@ -1071,6 +1111,14 @@ async def _chat_completions(
 
     messages = body.get("messages") or []
     tools = body.get("tools")
+    tool_policy = upstream.ToolPolicy(
+        choice=body.get("tool_choice"),
+        parallel=body.get("parallel_tool_calls"),
+    )
+    if unsupported := _unsupported_tool_policy(model, tool_policy):
+        # A dropped constraint completes and reads as applied. See
+        # docs/proxy-request-path.md.
+        return _error(400, unsupported, "invalid_request_error")
     options = _options_from_openai(body)
     stream = bool(body.get("stream", False))
 
@@ -1130,6 +1178,7 @@ async def _chat_completions(
             tools,
             options,
             model.name,
+            tool_policy=tool_policy,
             trace_ctx=trace_ctx,
             request_span=request_span,
             lifecycle=lifecycle,
@@ -1150,7 +1199,13 @@ async def _chat_completions(
         log.info("request.accepted", **trace_ctx.attrs(), outcome="accepted")
         try:
             result = await get_queue().submit(
-                model, messages, tools, options, trace_ctx=trace_ctx, deadline=deadline
+                model,
+                messages,
+                tools,
+                options,
+                tool_policy=tool_policy,
+                trace_ctx=trace_ctx,
+                deadline=deadline,
             )
         except asyncio.CancelledError:
             _emit_request_terminal(lifecycle, "cancelled", started=started)

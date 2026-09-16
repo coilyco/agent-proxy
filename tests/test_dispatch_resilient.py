@@ -61,7 +61,9 @@ async def test_fails_twice_then_succeeds_counts_retries(monkeypatch):
 
     calls = {"n": 0}
 
-    async def flaky(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def flaky(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         calls["n"] += 1
         if calls["n"] <= 2:
             raise UpstreamError("transient")
@@ -116,7 +118,9 @@ async def test_falls_back_to_next_backend(monkeypatch):
     model = LogicalModel("qwen3:32b", 4096, [primary, secondary])
     _install_resolve(monkeypatch, model)
 
-    async def chat(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def chat(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         if be.name == primary.name:
             raise UpstreamError("dead primary")
         return _good("from-secondary")

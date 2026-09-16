@@ -64,7 +64,9 @@ def _write_tokens(model: str) -> float:
 def cache_client(monkeypatch, app_client):
     """A backend that reports DeepSeek-shaped cache accounting on every turn."""
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag,
             content="Paris",
@@ -87,7 +89,9 @@ def cache_client(monkeypatch, app_client):
 def silent_client(monkeypatch, app_client):
     """An Ollama-shaped backend that never reports cache accounting."""
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag,
             content="Paris",
@@ -259,7 +263,14 @@ def test_streaming_turn_records_cache_tokens_from_the_terminal_chunk(monkeypatch
     # The streaming surface rebuilds its terminal result from the normalized
     # chunk, so the chunk is the only carrier that reaches the metric.
     async def fake_dispatch_stream(
-        model, messages, *, tools=None, options=None, trace_ctx=None, deadline=None
+        model,
+        messages,
+        *,
+        tools=None,
+        tool_policy=None,
+        options=None,
+        trace_ctx=None,
+        deadline=None,
     ):
         yield {
             "message": {"content": "Paris"},

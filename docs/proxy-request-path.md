@@ -56,6 +56,31 @@ Streaming requests take the same fallback chain and circuit breaker but skip the
 reroll (a token stream cannot be validated after the fact), so a harness that
 wants the full resilience guarantee uses the non-streaming path.
 
+## Request parameters that reach the backend
+
+`messages`, `tools`, `tool_choice`, `parallel_tool_calls`, `temperature`,
+`top_p`, `max_tokens`, `stop`, and `seed` are forwarded. Everything else in the
+body is dropped, `response_format` included.
+
+The sampling four plus `seed` ride the internal `options` dict, which lands
+under `options` for an ollama backend and at the top level for an OpenAI one.
+`tool_choice` and `parallel_tool_calls` ride a `ToolPolicy` beside `tools`, and
+a later OpenAI tool-contract field arrives there rather than as another
+parameter through nine signatures.
+
+**A tool constraint an ollama backend cannot apply is a 400, not a silent
+drop.** `/api/chat` has neither field and ignores an unknown top-level key, so
+forwarding either one produces a run that completes, reads as constrained, and
+measured something else. An evaluation harness asking a model to call a tool
+would score its own dropped constraint as the model declining. `tool_choice:
+"auto"` is ollama's own behavior and passes. The check runs when any backend on
+the route's chain speaks the ollama dialect, because a fallback serves the same
+request.
+
+A tool call keeps the id its backend issued and gets a synthesized one only when
+the backend issued none, which is every ollama call. Both the streaming and
+non-streaming paths agree on this.
+
 ## Endpoints
 
 

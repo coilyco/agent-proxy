@@ -14,7 +14,9 @@ CATALOG: dict[str, int | None] = {"qwen3:4b": 262144}
 def limited(monkeypatch, app_client):
     """A client whose limiter is live at 1/s with no burst, the shipped default."""
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(model=backend.ollama_tag, content="ok")
 
     async def fake_catalog(_base_url):

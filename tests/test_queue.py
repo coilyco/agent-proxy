@@ -51,7 +51,7 @@ async def test_worker_delivers_result(monkeypatch):
     from app.upstream import UpstreamResult
 
     async def fake_dispatch(
-        model, messages, tools=None, options=None, trace_ctx=None, deadline=None
+        model, messages, tools=None, tool_policy=None, options=None, trace_ctx=None, deadline=None
     ):
         return UpstreamResult(model="t", content="hello")
 
@@ -75,7 +75,7 @@ async def test_worker_restores_submitter_trace_context(monkeypatch):
     observed = []
 
     async def fake_dispatch(
-        model, messages, tools=None, options=None, trace_ctx=None, deadline=None
+        model, messages, tools=None, tool_policy=None, options=None, trace_ctx=None, deadline=None
     ):
         observed.append(trace.get_current_span().get_span_context())
         return UpstreamResult(model="t", content="hello")
@@ -136,7 +136,7 @@ async def test_queue_wait_ends_at_dequeue_not_at_completion():
             return _Span(name)
 
     async def slow_dispatch(
-        model, messages, tools=None, options=None, trace_ctx=None, deadline=None
+        model, messages, tools=None, tool_policy=None, options=None, trace_ctx=None, deadline=None
     ):
         await finished.wait()
         return UpstreamResult(model="t", content="done")

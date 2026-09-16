@@ -61,7 +61,9 @@ async def test_truncation_is_marked_and_counted(monkeypatch):
         logical_model=model.name, request_model=model.name, request_kind="chat"
     )
 
-    async def chat(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def chat(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return _truncated_result()
 
     monkeypatch.setattr(upstream, "chat", chat)
@@ -99,7 +101,9 @@ async def test_hard_fail_raises_when_configured(monkeypatch):
     backend = Backend(name="b-strict", url="http://x", ollama_tag="t", num_parallel=2)
     model = LogicalModel("qwen3:4b", 49152, [backend])
 
-    async def chat(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def chat(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return _truncated_result()
 
     monkeypatch.setattr(upstream, "chat", chat)
@@ -113,7 +117,9 @@ async def test_full_window_delivery_not_flagged(monkeypatch):
     backend = Backend(name="b-single", url="http://x", ollama_tag="t", num_parallel=1)
     model = LogicalModel("qwen3:4b", 49152, [backend])
 
-    async def chat(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def chat(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         # The full window was delivered (NUM_PARALLEL=1): prompt_eval_count ~= num_ctx.
         return UpstreamResult(model="m", content="ok", prompt_eval_count=49151, eval_count=8)
 
@@ -132,7 +138,9 @@ async def test_openai_backend_is_never_flagged(monkeypatch):
     )
     model = LogicalModel("gpt-oss:120b", 49152, [backend])
 
-    async def chat(be, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def chat(
+        be, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return _truncated_result()
 
     monkeypatch.setattr(upstream, "chat", chat)

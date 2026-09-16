@@ -293,7 +293,9 @@ def test_spans_carry_backend_identity_and_regime(traced, monkeypatch, app_client
     async def fake_catalog(_base_url):
         return {"qwen3:4b": 262144}, True
 
-    async def served(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def served(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(model=backend.ollama_tag, content="ok")
 
     monkeypatch.setattr(models, "_catalog", fake_catalog)

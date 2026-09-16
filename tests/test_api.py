@@ -20,7 +20,9 @@ CATALOG: dict[str, int | None] = {"qwen3:4b": 262144, "qwen3:8b": 40960}
 
 @pytest.fixture
 def client(monkeypatch, app_client):
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag,
             content="Paris",
@@ -228,7 +230,9 @@ def test_logical_request_forwards_alias_without_mutating_messages(client, monkey
 
     captured = {}
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         captured["model"] = backend.ollama_tag
         captured["messages"] = messages
         captured["span_attrs"] = span_attrs
@@ -536,7 +540,9 @@ def test_chat_completion_uses_tracing(client, monkeypatch):
         lambda span, event, *args, **fields: terminal_logs.append((span.name, event)),
     )
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag, content="Paris", prompt_eval_count=42, eval_count=3
         )
@@ -602,7 +608,9 @@ def test_chat_completion_ingests_ward_headers(client, monkeypatch):
     monkeypatch.setattr("app.resilience.get_tracer", lambda: tracer)
     monkeypatch.setattr("app.upstream.get_tracer", lambda: tracer)
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag, content="Paris", prompt_eval_count=42, eval_count=3
         )
@@ -654,7 +662,9 @@ def test_chat_completion_body_metadata_fallback(client, monkeypatch):
     monkeypatch.setattr("app.resilience.get_tracer", lambda: tracer)
     monkeypatch.setattr("app.upstream.get_tracer", lambda: tracer)
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag, content="Paris", prompt_eval_count=42, eval_count=3
         )
@@ -698,7 +708,9 @@ def test_chat_completion_headers_override_body_metadata(client, monkeypatch):
     monkeypatch.setattr("app.resilience.get_tracer", lambda: tracer)
     monkeypatch.setattr("app.upstream.get_tracer", lambda: tracer)
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag, content="Paris", prompt_eval_count=42, eval_count=3
         )
@@ -747,7 +759,9 @@ def test_completions_body_metadata_fallback(client, monkeypatch):
     monkeypatch.setattr("app.resilience.get_tracer", lambda: tracer)
     monkeypatch.setattr("app.upstream.get_tracer", lambda: tracer)
 
-    async def fake_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         return UpstreamResult(
             model=backend.ollama_tag, content="Paris", prompt_eval_count=42, eval_count=3
         )
@@ -787,7 +801,14 @@ def test_stream_chat_completion_ingests_metadata(client, monkeypatch):
     monkeypatch.setattr("app.upstream.get_tracer", lambda: tracer)
 
     async def fake_dispatch_stream(
-        model, messages, *, tools=None, options=None, trace_ctx=None, deadline=None
+        model,
+        messages,
+        *,
+        tools=None,
+        tool_policy=None,
+        options=None,
+        trace_ctx=None,
+        deadline=None,
     ):
         assert trace_ctx is not None
         attrs = trace_ctx.attrs()
@@ -851,7 +872,7 @@ def test_chat_capture_contains_every_request_and_response_field(client, monkeypa
     monkeypatch.setattr("app.main.is_trace_bodies_enabled", lambda: True)
 
     async def captured_chat(
-        backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
     ):
         return UpstreamResult(
             model=backend.ollama_tag,
@@ -911,7 +932,14 @@ def test_stream_capture_reconstructs_reasoning_tools_usage_and_finish(client, mo
     monkeypatch.setattr("app.main.is_trace_bodies_enabled", lambda: True)
 
     async def fake_dispatch_stream(
-        model, messages, *, tools=None, options=None, trace_ctx=None, deadline=None
+        model,
+        messages,
+        *,
+        tools=None,
+        tool_policy=None,
+        options=None,
+        trace_ctx=None,
+        deadline=None,
     ):
         yield {
             "message": {"content": "Par", "thinking": "known "},
@@ -1114,7 +1142,14 @@ def test_stream_capture_records_partial_response_on_failure(client, monkeypatch,
     monkeypatch.setattr("app.main.is_trace_bodies_enabled", lambda: True)
 
     async def failing_stream(
-        model, messages, *, tools=None, options=None, trace_ctx=None, deadline=None
+        model,
+        messages,
+        *,
+        tools=None,
+        tool_policy=None,
+        options=None,
+        trace_ctx=None,
+        deadline=None,
     ):
         yield {"message": {"content": "partial"}, "done": False}
         raise resilience.AllBackendsFailed("stream interrupted")
@@ -1144,7 +1179,9 @@ def test_unpaired_trimmed_prompt_is_rejected_locally(client, monkeypatch):
     """Issue #113: an unpairable prompt must not reach the backend at all."""
     dispatched: list[object] = []
 
-    async def refuse_chat(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def refuse_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         dispatched.append(messages)
         raise AssertionError("an unpaired prompt must never be dispatched")
 
@@ -1177,7 +1214,9 @@ def test_unpaired_trimmed_prompt_is_rejected_locally(client, monkeypatch):
 def test_upstream_rejection_reaches_the_caller_as_itself(client, monkeypatch):
     """Issue #114: a 400 is not a 502, and the upstream body is the useful part."""
 
-    async def rejects(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def rejects(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         raise upstream.UpstreamStatusError(
             "litellm: Client error '400 Bad Request'",
             status_code=400,
@@ -1211,7 +1250,9 @@ def test_upstream_rejection_reaches_the_caller_as_itself(client, monkeypatch):
 
 
 def test_upstream_server_error_is_still_a_backend_failure(client, monkeypatch):
-    async def unavailable(backend, num_ctx, messages, *, tools=None, options=None, span_attrs=None):
+    async def unavailable(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
         raise upstream.UpstreamStatusError("litellm: Server error '503'", status_code=503, body="")
 
     monkeypatch.setattr(upstream, "chat", unavailable)
@@ -1224,3 +1265,161 @@ def test_upstream_server_error_is_still_a_backend_failure(client, monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["error"]["type"] == "upstream_error"
+
+
+# The tool-calling contract at the request path
+
+
+_TOOLS = [
+    {
+        "type": "function",
+        "function": {"name": "lookup", "parameters": {"type": "object"}},
+    }
+]
+
+
+def test_tool_choice_is_refused_on_an_ollama_route(client):
+    """A constraint the backend drops would produce a run that looks constrained."""
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3:4b",
+            "messages": [{"role": "user", "content": "capital?"}],
+            "tools": _TOOLS,
+            "tool_choice": "required",
+        },
+    )
+
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert "tool_choice" in message
+    assert "ollama-dialect" in message
+
+
+def test_parallel_tool_calls_is_refused_on_an_ollama_route(client):
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3:4b",
+            "messages": [{"role": "user", "content": "capital?"}],
+            "tools": _TOOLS,
+            "parallel_tool_calls": False,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "parallel_tool_calls" in response.json()["error"]["message"]
+
+
+def test_tool_choice_auto_is_accepted_on_an_ollama_route(client):
+    """``auto`` is ollama's own behavior, so it asks for nothing it cannot do."""
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3:4b",
+            "messages": [{"role": "user", "content": "capital?"}],
+            "tools": _TOOLS,
+            "tool_choice": "auto",
+        },
+    )
+
+    assert response.status_code == 200
+
+
+def test_tool_policy_and_seed_reach_a_litellm_backend(client, monkeypatch):
+    settings = models.get_settings()
+    monkeypatch.setattr(settings, "route_upstream_mode", "litellm")
+    monkeypatch.setattr(
+        settings,
+        "backends_json",
+        json.dumps([{"name": "litellm", "url": "http://litellm:4000", "dialect": "openai"}]),
+    )
+    monkeypatch.setattr(models, "get_route_registry", _registry)
+
+    async def fake_tower_catalog(_base_url):
+        return {"ornith:35b": 65536}, True
+
+    captured = {}
+
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
+        captured["tool_policy"] = tool_policy
+        captured["options"] = options
+        return UpstreamResult(model=backend.ollama_tag, content="routed")
+
+    monkeypatch.setattr(models, "_ollama_catalog", fake_tower_catalog)
+    monkeypatch.setattr(upstream, "chat", fake_chat)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "sirens-echo/default",
+            "messages": [{"role": "user", "content": "retrieve this"}],
+            "tools": _TOOLS,
+            "tool_choice": "required",
+            "parallel_tool_calls": False,
+            "seed": 11,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["tool_policy"] == upstream.ToolPolicy(choice="required", parallel=False)
+    assert captured["options"]["seed"] == 11
+
+
+def test_a_backend_issued_tool_call_id_survives_the_non_streaming_path(client, monkeypatch):
+    """The streaming path always kept the real id. This one used to overwrite it."""
+
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
+        return UpstreamResult(
+            model=backend.ollama_tag,
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_from_the_backend",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": '{"city":"Paris"}'},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(upstream, "chat", fake_chat)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3:4b",
+            "messages": [{"role": "user", "content": "capital?"}],
+            "tools": _TOOLS,
+        },
+    )
+
+    call = response.json()["choices"][0]["message"]["tool_calls"][0]
+    assert call["id"] == "call_from_the_backend"
+    assert call["function"]["arguments"] == '{"city":"Paris"}'
+
+
+def test_an_ollama_tool_call_without_an_id_still_gets_one(client, monkeypatch):
+    async def fake_chat(
+        backend, num_ctx, messages, *, tools=None, tool_policy=None, options=None, span_attrs=None
+    ):
+        return UpstreamResult(
+            model=backend.ollama_tag,
+            content="",
+            tool_calls=[{"function": {"name": "lookup", "arguments": {"city": "Paris"}}}],
+        )
+
+    monkeypatch.setattr(upstream, "chat", fake_chat)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3:4b",
+            "messages": [{"role": "user", "content": "capital?"}],
+            "tools": _TOOLS,
+        },
+    )
+
+    call = response.json()["choices"][0]["message"]["tool_calls"][0]
+    assert call["id"].startswith("call_")
+    assert json.loads(call["function"]["arguments"]) == {"city": "Paris"}

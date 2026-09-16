@@ -5,7 +5,7 @@ Part of [FEATURES](FEATURES.md).
 ## Landed reliability collection tap
 
 
-- **OpenAI-compatible request surface** - landed - `/v1/chat/completions`, `/v1/completions`, and `/v1/models`, including streaming and normalized reasoning content.
+- **OpenAI-compatible request surface** - landed - `/v1/chat/completions`, `/v1/completions`, and `/v1/models`, including streaming and normalized reasoning content. `tools`, `tool_choice`, `parallel_tool_calls`, and `seed` reach the backend that can honor them, and a tool constraint an ollama-dialect backend would ignore gets a local 400 rather than a run that looks constrained. See [proxy-request-path.md](proxy-request-path.md).
 - **Remote MCP prompt surface** - landed - stateless Streamable HTTP at `/mcp`
   exposes model discovery and non-streaming prompt tools through the existing
   Agent Proxy policy, reliability, telemetry, and trajectory path. See
