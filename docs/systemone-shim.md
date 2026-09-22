@@ -14,6 +14,14 @@ Implementation: [`app/systemone.py`](../app/systemone.py) for the upstream call,
 
 The backend is not an entry in `PROXY_BACKENDS_JSON`. That list is the fallback chain of every chat route, so a Jev entry would become a chat fallback. The shim builds its one backend itself, named `typesafe`, dialect `systemone`, regime `hosted` ([backend-catalog.md](backend-catalog.md)).
 
+## `POST /v1/systemone/choice`
+
+A flat-bodied sibling of the plain route, for a caller that cannot author TypeSafe's `choice` criteria map directly: `{"model", "state"?, "instructions", "options": [{"name", "description"}, ...]}`. `app.systemone.build_choice_body` reshapes it into `questions.answer` (the one fixed question key every `/v1/systemone/<type>` route uses, a tool call being one question) with `criteria` built from `options`, then calls the same internal path the plain route does, so the span, cost, trajectory events and error handling are identical, keyed by the same `agentproxy.decision.questions` count (1).
+
+This exists for `teable:coilyco-flight-deck/agent-proxy#7987`, whose MCP surface fronts Jev through beaver, and beaver's guardfile speaks umbra's inline grammar (typed inputs are scalars and arrays of scalars, per `umbra/docs/opcore-inline.md`). `criteria` is a map keyed by caller-chosen option names, which that grammar cannot express. `noul` has no nested field to reshape, and `score`'s `criteria` is TypeSafe's own ordered array rather than a map, so both pass through the plain route with `array ... raw=true` and need no sibling route of their own.
+
+A bad shape (empty or non-string `model`/`instructions`, an empty or non-array `options`, a non-object option, a missing or duplicate `name`) is a 400 before anything reaches TypeSafe.
+
 ## Upstream contract
 
 Read from TypeSafe's docs on 2026-09-19 (`docs.typesafe.ai/api`, `/models.md`, `/primitives/choice.md`).

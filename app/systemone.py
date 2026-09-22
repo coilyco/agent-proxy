@@ -66,6 +66,61 @@ def question_count(body: dict[str, Any]) -> int:
     return len(questions) if isinstance(questions, dict) else 0
 
 
+# The one fixed question key every /v1/systemone/<type> route uses. A tool
+# call is one question, so there is nothing for a caller to name.
+CHOICE_QUESTION_KEY = "answer"
+
+
+def build_choice_body(flat: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Reshape a flat choice request into TypeSafe's nested ``criteria`` map.
+
+    TypeSafe's ``choice`` question takes ``criteria`` as a map keyed by
+    caller-chosen option names. umbra's inline guardfile grammar has no
+    primitive for turning an array element's own field into an object key
+    (typed inputs are scalars and arrays of scalars; objects fail closed,
+    per umbra/docs/opcore-inline.md), so a beaver guardfile cannot author
+    this shape directly. This is the one reshape a flat tool call still
+    needs: ``noul`` has no nested field at all, and ``score``'s ``criteria``
+    is TypeSafe's own ordered array, not a map, so both pass straight
+    through the existing grammar's ``array ... raw=true`` escape hatch.
+
+    Returns ``(body, "")`` on a well-formed flat request, or
+    ``(None, message)`` naming the first thing wrong with it.
+    """
+    model = flat.get("model")
+    if not isinstance(model, str) or not model:
+        return None, "model must be a non-empty string"
+    instructions = flat.get("instructions")
+    if not isinstance(instructions, str) or not instructions:
+        return None, "instructions must be a non-empty string"
+    options = flat.get("options")
+    if not isinstance(options, list) or not options:
+        return None, "options must be a non-empty array"
+    criteria: dict[str, Any] = {}
+    for option in options:
+        if not isinstance(option, dict):
+            return None, "each option must be an object"
+        name = option.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "each option needs a non-empty string name"
+        if name in criteria:
+            return None, f"duplicate option name '{name}'"
+        criteria[name] = option.get("description")
+    body: dict[str, Any] = {
+        "model": model,
+        "questions": {
+            CHOICE_QUESTION_KEY: {
+                "type": "choice",
+                "instructions": instructions,
+                "criteria": criteria,
+            }
+        },
+    }
+    if "state" in flat:
+        body["state"] = flat["state"]
+    return body, ""
+
+
 def input_cost_usd(input_tokens: int) -> float:
     """Output tokens are free at the source, so input is the whole charge."""
     return input_tokens * get_settings().systemone_input_usd_per_mtok / 1_000_000

@@ -1391,6 +1391,21 @@ async def systemone_decide(request: Request) -> Response:
     return await _until_disconnect(request, _systemone(body, request.headers))
 
 
+# Flat-bodied /v1/systemone sibling; reshape and why: docs/systemone-shim.md.
+@app.post("/v1/systemone/choice")
+async def systemone_choice(request: Request) -> Response:
+    try:
+        flat = await request.json()
+    except Exception:
+        return _error(400, "invalid JSON body", "invalid_request_error")
+    if not isinstance(flat, dict):
+        return _error(400, "JSON body must be an object", "invalid_request_error")
+    body, message = systemone.build_choice_body(flat)
+    if body is None:
+        return _error(400, message, "invalid_request_error")
+    return await _until_disconnect(request, _systemone(body, request.headers))
+
+
 def _systemone_failed(
     lifecycle: RequestLifecycle,
     request_span: Any | None,

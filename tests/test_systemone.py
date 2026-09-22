@@ -260,3 +260,123 @@ def test_no_key_or_an_unreadable_one_is_a_503_that_never_reaches_upstream(jev, m
 def test_input_cost_is_the_configured_price_per_million_input_tokens():
     assert systemone.input_cost_usd(1_000_000) == pytest.approx(0.042)
     assert systemone.input_cost_usd(0) == 0.0
+
+
+CHOICE_FLAT = {
+    "model": "jev-latest",
+    "state": {"ticket": "the export button is greyed out"},
+    "instructions": "Which team?",
+    "options": [
+        {"name": "billing", "description": "Payments"},
+        {"name": "technical", "description": "Bugs"},
+    ],
+}
+CHOICE_NESTED = {
+    "model": "jev-latest",
+    "state": {"ticket": "the export button is greyed out"},
+    "questions": {
+        "answer": {
+            "type": "choice",
+            "instructions": "Which team?",
+            "criteria": {"billing": "Payments", "technical": "Bugs"},
+        }
+    },
+}
+
+
+def test_build_choice_body_reshapes_options_into_the_criteria_map():
+    body, message = systemone.build_choice_body(CHOICE_FLAT)
+    assert message == ""
+    assert body == CHOICE_NESTED
+
+
+def test_build_choice_body_drops_state_when_the_caller_sent_none():
+    flat = {k: v for k, v in CHOICE_FLAT.items() if k != "state"}
+    body, message = systemone.build_choice_body(flat)
+    assert message == ""
+    assert body is not None
+    assert "state" not in body
+
+
+@pytest.mark.parametrize(
+    "bad,message",
+    [
+        ({**CHOICE_FLAT, "model": ""}, "model must be a non-empty string"),
+        (
+            {k: v for k, v in CHOICE_FLAT.items() if k != "model"},
+            "model must be a non-empty string",
+        ),
+        ({**CHOICE_FLAT, "instructions": ""}, "instructions must be a non-empty string"),
+        ({**CHOICE_FLAT, "options": []}, "options must be a non-empty array"),
+        ({**CHOICE_FLAT, "options": "billing"}, "options must be a non-empty array"),
+        ({**CHOICE_FLAT, "options": ["billing"]}, "each option must be an object"),
+        (
+            {**CHOICE_FLAT, "options": [{"description": "Payments"}]},
+            "each option needs a non-empty string name",
+        ),
+        (
+            {**CHOICE_FLAT, "options": [{"name": "billing"}, {"name": "billing"}]},
+            "duplicate option name 'billing'",
+        ),
+    ],
+)
+def test_build_choice_body_rejects_each_bad_shape(bad, message):
+    body, got = systemone.build_choice_body(bad)
+    assert body is None
+    assert got == message
+
+
+def test_the_choice_route_forwards_the_reshaped_body_and_returns_the_answer_verbatim(jev):
+    reply = {
+        "model": "jev-1.13.0",
+        "answers": {
+            "answer": {
+                "type": "choice",
+                "choice": "technical",
+                "probabilities": {"billing": 0.1, "technical": 0.9},
+                "confidence": 0.88,
+            }
+        },
+        "usage": {"input_tokens": 400_000, "output_tokens": 0},
+    }
+    jev.respond(lambda request: httpx.Response(200, json=reply))
+    response = jev.post("/v1/systemone/choice", json=CHOICE_FLAT)
+    assert response.status_code == 200
+    assert response.json() == reply
+    (call,) = jev.seen
+    assert str(call.url) == "https://api.typesafe.test/v1/systemone"
+    assert json.loads(call.content) == CHOICE_NESTED
+
+
+def test_the_choice_route_leaves_the_same_span_shape_as_the_plain_route(jev, spans):
+    jev.respond(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "model": "jev-1.13.0",
+                "answers": {"answer": {"type": "choice", "choice": "technical"}},
+                "usage": {"input_tokens": 400_000, "output_tokens": 0},
+            },
+        )
+    )
+    assert jev.post("/v1/systemone/choice", json=CHOICE_FLAT).status_code == 200
+    (span,) = spans()
+    attrs = dict(span.attributes)
+    assert attrs["agentproxy.decision.questions"] == 1
+    assert attrs["gen_ai.response.model"] == "jev-1.13.0"
+
+
+def test_the_choice_route_rejects_a_bad_shape_before_it_can_reach_upstream(jev):
+    response = jev.post("/v1/systemone/choice", json={**CHOICE_FLAT, "options": []})
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "invalid_request_error"
+    assert jev.seen == []
+
+
+@pytest.mark.parametrize("payload", ["[]", "not json"])
+def test_the_choice_route_rejects_a_body_that_is_not_a_json_object(jev, payload):
+    response = jev.post(
+        "/v1/systemone/choice", content=payload, headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 400
+    assert jev.seen == []
