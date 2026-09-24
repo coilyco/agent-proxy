@@ -5,7 +5,7 @@ description: Observability and trajectory data plane for AI agents with OpenAI-c
 
 # repo-agent-proxy
 
-Pointer to `~/projects/coilyco-flight-deck/agent-proxy/`.
+Pointer to `~/projects/coilyco/agent-proxy/`.
 
 - [`README.md`](../../../README.md) - what it is, quickstart, layout.
 - [`AGENTS.md`](../../../AGENTS.md) - agent-facing operating context for the repo.
