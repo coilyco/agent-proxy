@@ -107,6 +107,13 @@ Part of [proxy.md](proxy.md). Accepted request headers, their OpenAI
 * `x-ward-context-level` or `metadata.ward.context_level` - `ward.context_level`
 * `x-ward-version` or `metadata.ward.version` - `ward.version`
 * `x-agent-session-id` or `metadata.agent.session_id` - `agent.session_id`
+* `x-agent-origin` or `metadata.agent.origin` - `agent.origin`
 
 Prometheus labels stay unchanged. The new correlation fields live only in logs
 and traces.
+
+`agent.origin` (role/seat plus job, `eng-platform/beetle-ox:bulk-eval`) is set on
+every model request so a burst groups by sender (teable:coilyco/agent-proxy#8379).
+Missing reads `unknown`, and anything outside 1-128 of `A-Za-z0-9._:/@-` reads
+`invalid`. `agent_proxy_request_origin_total` counts the state, never the value.
+Nothing is rejected until `unknown` holds at 0 for an agreed window.

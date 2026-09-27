@@ -141,6 +141,12 @@ agent_proxy_health_endpoint_requests_total = Counter(
     "Metrics-only health endpoint responses",
     ["endpoint", "outcome"],
 )
+# The origin value itself is caller-supplied, so it lives in logs and spans only.
+agent_proxy_request_origin_total = Counter(
+    "agent_proxy_request_origin_total",
+    "Model requests by x-agent-origin state: present, unknown or invalid",
+    ["state"],
+)
 
 
 HEALTH_TRACE_EXCLUDED_URLS = "healthz,readyz,metrics"

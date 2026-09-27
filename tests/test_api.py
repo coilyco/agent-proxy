@@ -636,10 +636,12 @@ def test_chat_completion_ingests_ward_headers(client, monkeypatch):
             "x-ward-context-level": "2",
             "x-ward-version": "v1",
             "x-agent-session-id": "session-123",
+            "x-agent-origin": "eng-platform/beetle-ox:fixture",
         },
     )
     assert resp.status_code == 200
     attrs = _span_attrs(spans, "request.chat")
+    assert attrs["agent.origin"] == "eng-platform/beetle-ox:fixture"
     assert attrs["agentproxy.request_id"] == "req-123"
     assert attrs["ward.run_id"] == "run-123"
     assert attrs["ward.container_name"] == "container-123"

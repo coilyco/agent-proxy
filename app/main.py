@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -38,6 +39,7 @@ from .obs import (
     get_current_trace_span,
     get_tracer,
     is_trace_bodies_enabled,
+    agent_proxy_request_origin_total,
     llm_cost_usd_total,
     llm_prompt_tokens,
     llm_route_requests_total,
@@ -81,7 +83,10 @@ _TRACE_METADATA_FIELDS: dict[str, tuple[str, ...]] = {
     "ward.context_level": ("x-ward-context-level", "ward.context_level"),
     "ward.version": ("x-ward-version", "ward.version"),
     "agent.session_id": ("x-agent-session-id", "agent.session_id"),
+    "agent.origin": ("x-agent-origin", "agent.origin"),
 }
+
+_AGENT_ORIGIN_PATTERN = re.compile(r"[A-Za-z0-9._:/@-]{1,128}")
 
 _trajectory_emitter: AsyncTrajectoryEmitter | None = None
 
@@ -525,7 +530,21 @@ def _request_trace_extra(headers, metadata: Any = None) -> dict[str, object]:
             if value:
                 extra[target_key] = value
                 break
+    extra["agent.origin"] = _resolve_agent_origin(extra.get("agent.origin"))
     return extra
+
+
+def _resolve_agent_origin(value: object) -> str:
+    """Name the caller, or say plainly that it did not (teable:coilyco/agent-proxy#8379)."""
+
+    if value is None or value == "":
+        state, origin = "unknown", "unknown"
+    elif isinstance(value, str) and _AGENT_ORIGIN_PATTERN.fullmatch(value):
+        state, origin = "present", value
+    else:
+        state, origin = "invalid", "invalid"
+    agent_proxy_request_origin_total.labels(state=state).inc()
+    return origin
 
 
 def _trace_context(

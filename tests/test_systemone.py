@@ -380,3 +380,27 @@ def test_the_choice_route_rejects_a_body_that_is_not_a_json_object(jev, payload)
     )
     assert response.status_code == 400
     assert jev.seen == []
+
+
+@pytest.mark.parametrize(
+    ("headers", "origin", "state"),
+    [
+        (
+            {"x-agent-origin": "eng-platform/beetle-ox:bulk-eval"},
+            "eng-platform/beetle-ox:bulk-eval",
+            "present",
+        ),
+        ({}, "unknown", "unknown"),
+        ({"x-agent-origin": "two words"}, "invalid", "invalid"),
+        ({"x-agent-origin": "x" * 129}, "invalid", "invalid"),
+    ],
+)
+def test_every_call_names_its_origin_or_says_it_did_not(jev, spans, headers, origin, state):
+    before = _sample("agent_proxy_request_origin_total", state=state)
+    assert jev.post("/v1/systemone", json=REQUEST, headers=headers).status_code == 200
+    (span,) = spans()
+    assert span.attributes["agent.origin"] == origin
+    assert _sample("agent_proxy_request_origin_total", state=state) == before + 1
+    # The origin is for attribution here and is never forwarded to TypeSafe.
+    (call,) = jev.seen
+    assert "x-agent-origin" not in call.headers
