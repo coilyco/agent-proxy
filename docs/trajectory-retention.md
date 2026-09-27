@@ -24,7 +24,11 @@ reach it, and Ward remains the authorization and lifecycle authority.
 
 Hot-path producers use `AsyncTrajectoryEmitter.emit_nowait()`. The emitter has a
 fixed queue bound, returns `False` instead of waiting when full, and moves the
-SQLite commit onto a worker thread. A model response never waits for
+SQLite commit onto a worker thread. The worker drains whatever is queued, up to
+`max_batch`, into one transaction through `TrajectoryStore.ingest_many()`, with a
+savepoint per event so one failure rolls back alone. A commit per event capped
+the ser8 drain near 90 events/s, below a bulk Jev burst
+(teable:coilyco/agent-proxy#8378). A model response never waits for
 materialization, evaluation, or a cold-path storage write. This describes the
 current metadata-only emitter, not the opt-in full-I/O capture contract.
 

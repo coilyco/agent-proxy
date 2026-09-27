@@ -231,6 +231,32 @@ class TrajectoryStore:
         """Validate and durably retain one at-least-once delivery."""
 
         self.initialize()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            return self._ingest_on(connection, payload)
+
+    def ingest_many(self, payloads: Iterable[Any]) -> tuple[IngestResult | Exception, ...]:
+        """Retain a batch in one transaction, so one commit pays for every event.
+
+        Each event runs under its own savepoint, so one that fails is rolled
+        back alone and comes back as its exception in the matching position.
+        """
+
+        self.initialize()
+        results: list[IngestResult | Exception] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for payload in payloads:
+                connection.execute("SAVEPOINT trajectory_event")
+                try:
+                    results.append(self._ingest_on(connection, payload))
+                except Exception as exc:
+                    connection.execute("ROLLBACK TO trajectory_event")
+                    results.append(exc)
+                connection.execute("RELEASE trajectory_event")
+        return tuple(results)
+
+    def _ingest_on(self, connection: sqlite3.Connection, payload: Any) -> IngestResult:
         raw = _raw_bytes(payload)
         raw_digest = hashlib.sha256(raw).hexdigest()
         try:
@@ -242,25 +268,24 @@ class TrajectoryStore:
             source = parsed.get("source") if isinstance(parsed, dict) else None
             source_name = source.get("name") if isinstance(source, dict) else None
             idempotency_key = parsed.get("idempotency_key") if isinstance(parsed, dict) else None
-            with self._connect() as connection:
-                receipt_id = self._insert_receipt(
-                    connection,
-                    outcome="quarantined",
-                    raw=raw,
-                    digest=raw_digest,
-                    event_id=event_id if isinstance(event_id, str) else None,
-                    canonical_event_id=None,
-                    source_name=source_name if isinstance(source_name, str) else None,
-                    idempotency_key=(idempotency_key if isinstance(idempotency_key, str) else None),
-                    errors=errors,
-                )
-                connection.execute(
-                    "INSERT INTO quarantine (receipt_id, errors_json) VALUES (?, ?)",
-                    (
-                        receipt_id,
-                        json.dumps(errors, sort_keys=True, separators=(",", ":")),
-                    ),
-                )
+            receipt_id = self._insert_receipt(
+                connection,
+                outcome="quarantined",
+                raw=raw,
+                digest=raw_digest,
+                event_id=event_id if isinstance(event_id, str) else None,
+                canonical_event_id=None,
+                source_name=source_name if isinstance(source_name, str) else None,
+                idempotency_key=(idempotency_key if isinstance(idempotency_key, str) else None),
+                errors=errors,
+            )
+            connection.execute(
+                "INSERT INTO quarantine (receipt_id, errors_json) VALUES (?, ?)",
+                (
+                    receipt_id,
+                    json.dumps(errors, sort_keys=True, separators=(",", ":")),
+                ),
+            )
             return IngestResult(
                 outcome="quarantined",
                 receipt_id=receipt_id,
@@ -272,92 +297,90 @@ class TrajectoryStore:
         canonical = canonical_event_bytes(event)
         canonical_digest = hashlib.sha256(canonical).hexdigest()
         event_id = str(event.event_id)
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            duplicate = connection.execute(
-                """
-                SELECT event_id
-                FROM events
-                WHERE event_id = ? OR (source_name = ? AND idempotency_key = ?)
-                ORDER BY CASE WHEN event_id = ? THEN 0 ELSE 1 END
-                LIMIT 1
-                """,
-                (event_id, event.source.name, event.idempotency_key, event_id),
-            ).fetchone()
-            if duplicate is not None:
-                canonical_event_id = str(duplicate["event_id"])
-                receipt_id = self._insert_receipt(
-                    connection,
-                    outcome="duplicate",
-                    raw=raw,
-                    digest=raw_digest,
-                    event_id=event_id,
-                    canonical_event_id=canonical_event_id,
-                    source_name=event.source.name,
-                    idempotency_key=event.idempotency_key,
-                )
-                if event_id != canonical_event_id:
-                    connection.execute(
-                        """
-                        INSERT OR IGNORE INTO event_aliases (
-                            alias_event_id, canonical_event_id, source_name,
-                            idempotency_key, receipt_id
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            event_id,
-                            canonical_event_id,
-                            event.source.name,
-                            event.idempotency_key,
-                            receipt_id,
-                        ),
-                    )
-                return IngestResult(
-                    outcome="duplicate",
-                    receipt_id=receipt_id,
-                    event_id=event_id,
-                    canonical_event_id=canonical_event_id,
-                )
-
+        duplicate = connection.execute(
+            """
+            SELECT event_id
+            FROM events
+            WHERE event_id = ? OR (source_name = ? AND idempotency_key = ?)
+            ORDER BY CASE WHEN event_id = ? THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+            (event_id, event.source.name, event.idempotency_key, event_id),
+        ).fetchone()
+        if duplicate is not None:
+            canonical_event_id = str(duplicate["event_id"])
             receipt_id = self._insert_receipt(
                 connection,
-                outcome="accepted",
+                outcome="duplicate",
                 raw=raw,
                 digest=raw_digest,
                 event_id=event_id,
-                canonical_event_id=event_id,
+                canonical_event_id=canonical_event_id,
                 source_name=event.source.name,
                 idempotency_key=event.idempotency_key,
             )
-            payload_fields = event.payload.model_dump(mode="json", exclude_none=True)
-            retention_class = str(payload_fields.get("retention_class") or "standard")
-            access_tier = str(
-                payload_fields.get("access_tier")
-                or ("restricted" if event.content.capture == "restricted_body" else "internal")
+            if event_id != canonical_event_id:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO event_aliases (
+                        alias_event_id, canonical_event_id, source_name,
+                        idempotency_key, receipt_id
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        canonical_event_id,
+                        event.source.name,
+                        event.idempotency_key,
+                        receipt_id,
+                    ),
+                )
+            return IngestResult(
+                outcome="duplicate",
+                receipt_id=receipt_id,
+                event_id=event_id,
+                canonical_event_id=canonical_event_id,
             )
-            connection.execute(
-                """
-                INSERT INTO events (
-                    event_id, source_name, idempotency_key, schema_version,
-                    event_type, occurred_at, observed_at, first_receipt_id,
-                    envelope_sha256, envelope, retention_class, access_tier
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_id,
-                    event.source.name,
-                    event.idempotency_key,
-                    event.schema_version,
-                    event.event_type,
-                    _timestamp(event.occurred_at),
-                    _timestamp(event.observed_at),
-                    receipt_id,
-                    canonical_digest,
-                    canonical,
-                    retention_class,
-                    access_tier,
-                ),
-            )
+
+        receipt_id = self._insert_receipt(
+            connection,
+            outcome="accepted",
+            raw=raw,
+            digest=raw_digest,
+            event_id=event_id,
+            canonical_event_id=event_id,
+            source_name=event.source.name,
+            idempotency_key=event.idempotency_key,
+        )
+        payload_fields = event.payload.model_dump(mode="json", exclude_none=True)
+        retention_class = str(payload_fields.get("retention_class") or "standard")
+        access_tier = str(
+            payload_fields.get("access_tier")
+            or ("restricted" if event.content.capture == "restricted_body" else "internal")
+        )
+        connection.execute(
+            """
+            INSERT INTO events (
+                event_id, source_name, idempotency_key, schema_version,
+                event_type, occurred_at, observed_at, first_receipt_id,
+                envelope_sha256, envelope, retention_class, access_tier
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                event.source.name,
+                event.idempotency_key,
+                event.schema_version,
+                event.event_type,
+                _timestamp(event.occurred_at),
+                _timestamp(event.observed_at),
+                receipt_id,
+                canonical_digest,
+                canonical,
+                retention_class,
+                access_tier,
+            ),
+        )
         return IngestResult(
             outcome="accepted",
             receipt_id=receipt_id,
@@ -367,6 +390,11 @@ class TrajectoryStore:
 
     async def ingest_async(self, payload: Any) -> IngestResult:
         return await asyncio.to_thread(self.ingest, payload)
+
+    async def ingest_many_async(
+        self, payloads: Iterable[Any]
+    ) -> tuple[IngestResult | Exception, ...]:
+        return await asyncio.to_thread(self.ingest_many, tuple(payloads))
 
     def load_event(self, event_id: str) -> TrajectoryEvent | None:
         self.initialize()
@@ -476,10 +504,13 @@ class TrajectoryStore:
 class AsyncTrajectoryEmitter:
     """Bounded emitter for hot-path callers that must never await storage."""
 
-    def __init__(self, store: TrajectoryStore, *, maxsize: int = 256) -> None:
+    def __init__(self, store: TrajectoryStore, *, maxsize: int = 256, max_batch: int = 256) -> None:
         if maxsize < 1:
             raise ValueError("maxsize must be positive")
+        if max_batch < 1:
+            raise ValueError("max_batch must be positive")
         self.store = store
+        self.max_batch = max_batch
         self._queue: asyncio.Queue[Any | None] = asyncio.Queue(maxsize=maxsize)
         self._worker: asyncio.Task[None] | None = None
         self.dropped = 0
@@ -510,21 +541,38 @@ class AsyncTrajectoryEmitter:
         self._worker = None
 
     async def _run(self) -> None:
+        # One transaction per drained batch, never per event
+        # (docs/trajectory-retention.md, teable:coilyco/agent-proxy#8378).
         while True:
-            payload = await self._queue.get()
-            try:
-                if payload is None:
-                    return
+            batch = [await self._queue.get()]
+            while len(batch) < self.max_batch and batch[-1] is not None:
                 try:
-                    await self.store.ingest_async(payload)
-                except Exception as exc:
-                    self.failed += 1
-                    self.last_error_class = type(exc).__name__
-                    record_error("trajectory_event_persist_failed")
-                    log.warning(
-                        "trajectory.event.persist_failed",
-                        error_class=self.last_error_class,
-                        failed=self.failed,
-                    )
+                    batch.append(self._queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+            stopping = batch[-1] is None
+            payloads = batch[:-1] if stopping else batch
+            try:
+                if payloads:
+                    await self._persist(payloads)
             finally:
-                self._queue.task_done()
+                for _ in batch:
+                    self._queue.task_done()
+            if stopping:
+                return
+
+    async def _persist(self, payloads: list[Any]) -> None:
+        try:
+            results: tuple[Any, ...] = await self.store.ingest_many_async(payloads)
+        except Exception as exc:
+            results = (exc,) * len(payloads)
+        for result in results:
+            if isinstance(result, Exception):
+                self.failed += 1
+                self.last_error_class = type(result).__name__
+                record_error("trajectory_event_persist_failed")
+                log.warning(
+                    "trajectory.event.persist_failed",
+                    error_class=self.last_error_class,
+                    failed=self.failed,
+                )

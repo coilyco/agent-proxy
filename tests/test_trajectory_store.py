@@ -153,13 +153,14 @@ async def test_async_emitter_survives_one_persistence_failure():
         def __init__(self):
             self.calls = 0
 
-        async def ingest_async(self, _payload):
+        async def ingest_many_async(self, payloads):
             self.calls += 1
             if self.calls == 1:
                 raise OSError("fixture persistence failure")
+            return tuple(None for _ in payloads)
 
     store = FlakyStore()
-    emitter = AsyncTrajectoryEmitter(store, maxsize=2)
+    emitter = AsyncTrajectoryEmitter(store, maxsize=2, max_batch=1)
     await emitter.start()
 
     assert emitter.emit_nowait({"event": 1})
@@ -169,3 +170,63 @@ async def test_async_emitter_survives_one_persistence_failure():
     assert store.calls == 2
     assert emitter.failed == 1
     assert emitter.last_error_class == "OSError"
+
+
+async def test_async_emitter_drains_a_queued_burst_in_one_batch(tmp_path, monkeypatch):
+    store = TrajectoryStore(tmp_path / "trajectory.sqlite3")
+    batches: list[int] = []
+    original = store.ingest_many
+
+    def counted(payloads):
+        batches.append(len(payloads))
+        return original(payloads)
+
+    monkeypatch.setattr(store, "ingest_many", counted)
+    emitter = AsyncTrajectoryEmitter(store, maxsize=8)
+    for name in ("valid.json", "late-event.json", "replay.json"):
+        assert emitter.emit_nowait(_fixture(name))
+
+    await emitter.start()
+    await emitter.stop()
+
+    assert batches == [3]
+    assert len(tuple(store.iter_events())) == 3
+    assert emitter.failed == 0
+
+
+def test_ingest_many_commits_once_and_isolates_a_failing_event(tmp_path, monkeypatch):
+    store = TrajectoryStore(tmp_path / "trajectory.sqlite3")
+    store.initialize()
+    connects = [0]
+    original_connect = store._connect
+
+    def counted_connect():
+        connects[0] += 1
+        return original_connect()
+
+    original_ingest_on = store._ingest_on
+
+    def failing_on_late(connection, payload):
+        result = original_ingest_on(connection, payload)
+        if payload.get("idempotency_key") == "late-observation":
+            raise OSError("fixture failure after the event's writes")
+        return result
+
+    monkeypatch.setattr(store, "_connect", counted_connect)
+    monkeypatch.setattr(store, "_ingest_on", failing_on_late)
+    results = store.ingest_many(
+        [
+            _fixture("duplicate-original.json"),
+            _fixture("late-event.json"),
+            _fixture("duplicate-redelivery.json"),
+            _fixture("invalid-missing-event-id.json"),
+        ]
+    )
+
+    assert connects[0] == 1
+    assert results[0].outcome == "accepted"
+    assert isinstance(results[1], OSError)
+    assert results[2].outcome == "duplicate"
+    assert results[3].outcome == "quarantined"
+    assert len(tuple(store.iter_events())) == 1
+    assert store.receipt_outcomes() == ("accepted", "duplicate", "quarantined")
