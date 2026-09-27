@@ -270,3 +270,55 @@ def test_init_sentry_no_dsn_is_noop(monkeypatch):
         init_sentry()
     finally:
         config.get_settings.cache_clear()
+
+
+def test_sentry_budget_caps_events_per_process_minute(monkeypatch):
+    from app import obs
+
+    monkeypatch.setattr(obs, "_sentry_window", [])
+    allowed = [obs._sentry_within_budget(100.0) for _ in range(obs.SENTRY_EVENTS_PER_MINUTE + 1)]
+    assert allowed.count(True) == obs.SENTRY_EVENTS_PER_MINUTE
+    assert allowed[-1] is False
+    # A minute later the window has drained and events flow again.
+    assert obs._sentry_within_budget(161.0) is True
+
+
+def test_sentry_sdk_is_installed_and_initialises(monkeypatch):
+    # The package was once absent from the image and the import failure was
+    # swallowed, so a configured DSN reported nothing.
+    import sentry_sdk
+
+    from app import obs
+
+    warnings = []
+    monkeypatch.setattr(
+        obs.structlog,
+        "get_logger",
+        lambda *_a: type("L", (), {"warning": lambda _s, *a, **k: warnings.append((a, k))})(),
+    )
+    try:
+        obs._configure_sentry("https://public@example.invalid/1", "agent-proxy-test")
+        assert sentry_sdk.get_client().is_active()
+        assert warnings == []
+    finally:
+        sentry_sdk.init()
+
+
+def test_sentry_init_failure_logs_the_class_and_never_the_message(monkeypatch):
+    import sentry_sdk
+
+    from app import obs
+
+    def refuse(**_kwargs):
+        raise ValueError("https://secret-key@o0.ingest.example/1")
+
+    warnings = []
+    monkeypatch.setattr(sentry_sdk, "init", refuse)
+    monkeypatch.setattr(
+        obs.structlog,
+        "get_logger",
+        lambda *_a: type("L", (), {"warning": lambda _s, *a, **k: warnings.append((a, k))})(),
+    )
+    obs._configure_sentry("https://secret-key@o0.ingest.example/1", "agent-proxy-test")
+    assert warnings == [(("sentry.init_failed",), {"error_class": "ValueError"})]
+    assert "secret-key" not in repr(warnings)

@@ -13,16 +13,20 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, MutableMapping
+from typing import TYPE_CHECKING, Any, Callable, Iterator, MutableMapping
 from urllib.parse import urlsplit
 
 import structlog
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from .config import get_settings
+
+if TYPE_CHECKING:
+    from sentry_sdk.types import Event
 
 # Prometheus metrics - the leg 04 names plus request-level counters.
 
@@ -568,12 +572,30 @@ def emit_instrumented_action(action: InstrumentedAction) -> None:
         span.set_attribute(key, value)
 
 
-def _sentry_before_send(event: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any] | None:
+SENTRY_EVENTS_PER_MINUTE = 20
+_sentry_window: list[float] = []
+
+
+def _sentry_within_budget(now: float) -> bool:
+    """Cap events per process so one hot loop cannot spend the monthly quota."""
+
+    cutoff = now - 60.0
+    while _sentry_window and _sentry_window[0] < cutoff:
+        _sentry_window.pop(0)
+    if len(_sentry_window) >= SENTRY_EVENTS_PER_MINUTE:
+        return False
+    _sentry_window.append(now)
+    return True
+
+
+def _sentry_before_send(event: Event, _hint: dict[str, Any]) -> Event | None:
     if _health_observability_suppressed.get():
         return None
     request = event.get("request") or {}
     url = request.get("url", "") if isinstance(request, dict) else ""
-    return None if isinstance(url, str) and _is_health_path(url) else event
+    if isinstance(url, str) and _is_health_path(url):
+        return None
+    return event if _sentry_within_budget(time.monotonic()) else None
 
 
 def _sentry_before_breadcrumb(
@@ -599,8 +621,11 @@ def _configure_sentry(dsn: str, service_name: str) -> None:
             before_send=_sentry_before_send,
             before_breadcrumb=_sentry_before_breadcrumb,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # The class only: a BadDsn message can carry the DSN itself.
+        structlog.get_logger(service_name).warning(
+            "sentry.init_failed", error_class=type(exc).__name__
+        )
 
 
 def get_logger(name: str) -> structlog.BoundLogger:
