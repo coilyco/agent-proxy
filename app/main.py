@@ -823,6 +823,7 @@ async def _stream_chat(
     capture: ModelBodyCapture,
     shape_attrs: dict[str, int],
     deadline: float | None = None,
+    include_usage: bool = False,
 ) -> StreamingResponse:
     """Translate ollama's NDJSON stream into OpenAI ``chat.completion.chunk`` SSE."""
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
@@ -1030,8 +1031,19 @@ async def _stream_chat(
                 started=started,
                 result=terminal_result,
             )
-            final = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}
+            final: dict[str, Any] = {
+                **base,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+            }
+            usage = _usage_block(terminal_result) if terminal_result is not None else None
+            # Asked: OpenAI's usage chunk. Not asked: usage on the finish chunk, as
+            # DeepSeek sends it, so token-counting harnesses compact (#8373).
+            if usage is not None and not include_usage:
+                final["usage"] = usage
             yield stream.record(f"data: {json.dumps(final)}\n\n")
+            if include_usage:
+                tail = {**base, "choices": [], "usage": usage}
+                yield stream.record(f"data: {json.dumps(tail)}\n\n")
             yield stream.record("data: [DONE]\n\n")
         finally:
             close_span()
@@ -1189,6 +1201,7 @@ async def _chat_completions(
             capture=capture,
             shape_attrs=shape_attrs,
             deadline=deadline,
+            include_usage=bool((body.get("stream_options") or {}).get("include_usage")),
         )
 
     span_cm = tracer.start_as_current_span("request.chat") if tracer is not None else None
