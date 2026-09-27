@@ -405,7 +405,7 @@ def _chat_body(
     return body
 
 
-def _fold_stream_usage(
+def fold_stream_usage(
     result: UpstreamResult | None,
     payload: dict[str, Any],
     fallback_model: str,
@@ -733,9 +733,13 @@ async def chat_stream(
                 elif payload.get("usage"):
                     # Usage arrives in a trailing chunk of its own, after the
                     # finish_reason one. See docs/proxy-prompt-cache.md.
-                    terminal_result = _fold_stream_usage(
+                    terminal_result = fold_stream_usage(
                         terminal_result, payload, backend.ollama_tag
                     )
+                    # Forwarded too, or the response the client sees reads zero (#8376).
+                    out["usage"] = payload["usage"]
+                    if payload.get("model"):
+                        out["model"] = payload["model"]
                 yield out
         if span_cm is not None and terminal_result is not None:
             set_result_span_attributes(span, terminal_result)

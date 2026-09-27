@@ -925,6 +925,11 @@ async def _stream_chat(
                         finish = "tool_calls"
                     if terminal_span is not None:
                         upstream.set_result_span_attributes(terminal_span, terminal_result)
+                elif chunk.get("usage"):
+                    # LiteLLM sends usage in its own chunk after the finish (#8376).
+                    terminal_result = upstream.fold_stream_usage(terminal_result, chunk, model_name)
+                    if terminal_span is not None:
+                        upstream.set_result_span_attributes(terminal_span, terminal_result)
         except (asyncio.CancelledError, GeneratorExit) as exc:
             try:
                 capture_reason: CaptureReason = (
