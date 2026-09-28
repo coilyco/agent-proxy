@@ -613,13 +613,29 @@ def _configure_sentry(dsn: str, service_name: str) -> None:
         return
     try:
         import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.mcp import MCPIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
 
+        # Crashes only (teable:coilyco/deploy#8347), and no model text: frame
+        # locals and request bodies would carry prompts and replies.
         sentry_sdk.init(
             dsn=dsn,
             traces_sample_rate=0.0,
             environment=service_name,
             before_send=_sentry_before_send,
             before_breadcrumb=_sentry_before_breadcrumb,
+            include_local_variables=False,
+            max_request_body_size="never",
+            send_default_pii=False,
+            integrations=[
+                LoggingIntegration(event_level=None),
+                StarletteIntegration(failed_request_status_codes=set()),
+                FastApiIntegration(failed_request_status_codes=set()),
+            ],
+            # It reports every MCP tool error, and those are handled results.
+            disabled_integrations=[MCPIntegration()],
         )
     except Exception as exc:
         # The class only: a BadDsn message can carry the DSN itself.

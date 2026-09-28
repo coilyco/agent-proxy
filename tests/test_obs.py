@@ -322,3 +322,90 @@ def test_sentry_init_failure_logs_the_class_and_never_the_message(monkeypatch):
     obs._configure_sentry("https://secret-key@o0.ingest.example/1", "agent-proxy-test")
     assert warnings == [(("sentry.init_failed",), {"error_class": "ValueError"})]
     assert "secret-key" not in repr(warnings)
+
+
+class _SentryCapture:
+    def __init__(self):
+        from sentry_sdk.transport import Transport
+
+        class _T(Transport):
+            def __init__(inner):
+                super().__init__()
+
+            def capture_envelope(inner, envelope):
+                event = envelope.get_event()
+                if event is not None:
+                    self.events.append(event)
+
+        self.events: list[dict] = []
+        self.transport = _T()
+
+
+@pytest.fixture
+def sentry_capture(monkeypatch):
+    import sentry_sdk
+
+    from app import obs
+
+    capture = _SentryCapture()
+    real_init = sentry_sdk.init
+    monkeypatch.setattr(
+        sentry_sdk, "init", lambda **kwargs: real_init(transport=capture.transport, **kwargs)
+    )
+    monkeypatch.setattr(obs, "_sentry_window", [])
+    obs._configure_sentry("https://public@example.invalid/1", "agent-proxy-test")
+    yield capture
+    real_init()
+
+
+def _crash_app():
+    from fastapi import FastAPI, HTTPException
+
+    app = FastAPI()
+
+    @app.post("/crash")
+    async def crash(body: dict):
+        prompt_text = body["prompt"]  # noqa: F841
+        raise RuntimeError("route crashed")
+
+    @app.get("/handled")
+    async def handled():
+        logging.getLogger("httpx").error("upstream 502, falling back")
+        return {"ok": True}
+
+    @app.get("/refused")
+    async def refused():
+        raise HTTPException(status_code=503, detail="deliberate")
+
+    return app
+
+
+def test_sentry_sends_a_crash_without_frame_locals(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    secret = "-".join(["PROMPT", "SECRET"])
+    assert client.post("/crash", json={"prompt": secret}).status_code == 500
+    sentry_sdk.flush()
+    assert [e["exception"]["values"][-1]["value"] for e in sentry_capture.events] == [
+        "route crashed"
+    ]
+    assert secret not in json.dumps(sentry_capture.events)
+
+
+def test_sentry_leaves_handled_errors_in_signoz(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    assert client.get("/handled").status_code == 200
+    assert client.get("/refused").status_code == 503
+    sentry_sdk.flush()
+    assert sentry_capture.events == []
+
+
+def test_sentry_disables_the_mcp_tool_error_integration(sentry_capture):
+    import sentry_sdk
+
+    assert sentry_sdk.get_client().get_integration("mcp") is None
