@@ -364,8 +364,10 @@ def _crash_app():
     app = FastAPI()
 
     @app.post("/crash")
-    async def crash(body: dict):
-        prompt_text = body["prompt"]  # noqa: F841
+    async def crash(request: dict):
+        route_name = request["model"]  # noqa: F841
+        messages = request["messages"]  # noqa: F841
+        logging.getLogger("app.test").warning("routing request")
         raise RuntimeError("route crashed")
 
     @app.get("/handled")
@@ -380,17 +382,20 @@ def _crash_app():
     return app
 
 
-def test_sentry_sends_a_crash_without_frame_locals(sentry_capture):
+def test_sentry_keeps_locals_and_scrubs_the_keys_holding_user_data(sentry_capture):
     import sentry_sdk
     from fastapi.testclient import TestClient
 
     client = TestClient(_crash_app(), raise_server_exceptions=False)
     secret = "-".join(["PROMPT", "SECRET"])
-    assert client.post("/crash", json={"prompt": secret}).status_code == 500
+    body = {"model": "chat/default", "messages": [{"role": "user", "content": secret}]}
+    assert client.post("/crash", json=body).status_code == 500
     sentry_sdk.flush()
-    assert [e["exception"]["values"][-1]["value"] for e in sentry_capture.events] == [
-        "route crashed"
-    ]
+    (event,) = sentry_capture.events
+    assert event["exception"]["values"][-1]["value"] == "route crashed"
+    frame_vars = event["exception"]["values"][-1]["stacktrace"]["frames"][-1]["vars"]
+    # Locals are what make the trace useful, so a harmless one stays readable.
+    assert "chat/default" in frame_vars["route_name"]
     assert secret not in json.dumps(sentry_capture.events)
 
 
@@ -405,7 +410,25 @@ def test_sentry_leaves_handled_errors_in_signoz(sentry_capture):
     assert sentry_capture.events == []
 
 
-def test_sentry_disables_the_mcp_tool_error_integration(sentry_capture):
+def test_a_crash_carries_its_breadcrumbs_and_request_context(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    body = {"model": "chat/default", "messages": []}
+    assert client.post("/crash", json=body).status_code == 500
+    sentry_sdk.flush()
+    (event,) = sentry_capture.events
+    crumbs = [crumb.get("message") for crumb in event["breadcrumbs"]["values"]]
+    assert "routing request" in crumbs
+    assert event["request"]["method"] == "POST"
+    assert event["request"]["url"].endswith("/crash")
+
+
+def test_sentry_reports_mcp_tool_errors_without_their_arguments(sentry_capture):
     import sentry_sdk
 
-    assert sentry_sdk.get_client().get_integration("mcp") is None
+    client = sentry_sdk.get_client()
+    assert client.get_integration("mcp") is not None
+    # The MCP integration records tool arguments and results only with PII on.
+    assert client.options["send_default_pii"] is False

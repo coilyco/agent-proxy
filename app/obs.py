@@ -608,6 +608,36 @@ def _sentry_before_breadcrumb(
     return None if isinstance(url, str) and _is_health_path(url) else breadcrumb
 
 
+# Frame locals and request bodies stay on, because they make a trace readable.
+# These keys hold member or model text and are scrubbed wherever they appear.
+SENTRY_USER_DATA_KEYS = [
+    "messages",
+    "message",
+    "prompt",
+    "input",
+    "content",
+    "text",
+    "system",
+    "instructions",
+    "tools",
+    "tool_calls",
+    "arguments",
+    "choices",
+    "completion",
+    "reply",
+    "response_body",
+    "request_body",
+    "raw_body",
+    # FastAPI's raw request bytes, held in its own routing frame.
+    "body_bytes",
+    "body",
+    "payload",
+    "state",
+    "questions",
+    "answers",
+]
+
+
 def _configure_sentry(dsn: str, service_name: str) -> None:
     if not dsn:
         return
@@ -615,27 +645,26 @@ def _configure_sentry(dsn: str, service_name: str) -> None:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
-        from sentry_sdk.integrations.mcp import MCPIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
+        from sentry_sdk.scrubber import DEFAULT_DENYLIST, EventScrubber
 
-        # Crashes only (teable:coilyco/deploy#8347), and no model text: frame
-        # locals and request bodies would carry prompts and replies.
+        # Crashes only (teable:coilyco/deploy#8347), fully annotated: every
+        # integration stays on, and only these three are kept from raising events.
         sentry_sdk.init(
             dsn=dsn,
             traces_sample_rate=0.0,
             environment=service_name,
             before_send=_sentry_before_send,
             before_breadcrumb=_sentry_before_breadcrumb,
-            include_local_variables=False,
-            max_request_body_size="never",
             send_default_pii=False,
+            event_scrubber=EventScrubber(
+                denylist=DEFAULT_DENYLIST + SENTRY_USER_DATA_KEYS, recursive=True
+            ),
             integrations=[
                 LoggingIntegration(event_level=None),
                 StarletteIntegration(failed_request_status_codes=set()),
                 FastApiIntegration(failed_request_status_codes=set()),
             ],
-            # It reports every MCP tool error, and those are handled results.
-            disabled_integrations=[MCPIntegration()],
         )
     except Exception as exc:
         # The class only: a BadDsn message can carry the DSN itself.
