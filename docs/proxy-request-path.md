@@ -83,10 +83,11 @@ non-streaming paths agree on this.
 
 ## Endpoints
 
-
 * `POST /v1/chat/completions` - streaming and non-streaming.
 * `POST /v1/completions` - modeled as a single user turn so it rides the same
   resilience path.
+* `POST /v1/embeddings` - OpenAI list shape, `float` or `base64`, up to 256 strings. Served only
+  by a route's Ollama backends over `/api/embed`, never a hosted one (503 without), no queue.
 * `GET /v1/models` - lists enabled logical route keys and hides physical models.
 * `GET /healthz` - liveness for Caddy / k8s probes.
 * `GET /readyz/{namespace}/{alias}` - non-generating structural readiness for one

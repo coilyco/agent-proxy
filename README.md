@@ -69,8 +69,8 @@ keys, and the SigNoz viewing flow are in
 
 ## What exists today
 
-An OpenAI-compatible `/v1/chat/completions`, `/v1/completions`, and `/v1/models`
-surface, plus a stateless Streamable HTTP MCP surface at `/mcp` sharing the same
+An OpenAI-compatible `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`
+(local Ollama only), and `/v1/models` surface, plus a stateless Streamable HTTP MCP surface at `/mcp` sharing the same
 policy and evidence path. Underneath it: a bounded in-memory worker queue,
 response validation, retry, fallback, per-backend circuit breaking, context-budget
 protection, and non-generating readiness that checks control surfaces without

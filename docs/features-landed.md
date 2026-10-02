@@ -5,7 +5,7 @@ Part of [FEATURES](FEATURES.md).
 ## Landed reliability collection tap
 
 
-- **OpenAI-compatible request surface** - landed - `/v1/chat/completions`, `/v1/completions`, and `/v1/models`, including streaming and normalized reasoning content. `tools`, `tool_choice`, `parallel_tool_calls`, and `seed` reach the backend that can honor them, and a tool constraint an ollama-dialect backend would ignore gets a local 400 rather than a run that looks constrained. See [proxy-request-path.md](proxy-request-path.md).
+- **OpenAI-compatible request surface** - landed - `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`, including streaming and normalized reasoning content. `tools`, `tool_choice`, `parallel_tool_calls`, and `seed` reach the backend that can honor them, and a tool constraint an ollama-dialect backend would ignore gets a local 400, not a run that looks constrained. See [proxy-request-path.md](proxy-request-path.md).
 - **Jev decision shim** - landed - `/v1/systemone` fronts TypeSafe's System One model in the vendor's shape, plus a flat-bodied `/v1/systemone/choice` sibling for a caller that cannot author the criteria map, with a mounted key the caller never holds. It emits the chat path's spans, metrics and trajectory events plus the proxy's first cost signal. Deploy wiring is separate. See [systemone-shim.md](systemone-shim.md).
 - **Remote MCP prompt surface** - landed - stateless Streamable HTTP at `/mcp`
   exposes model discovery and non-streaming prompt tools through the existing

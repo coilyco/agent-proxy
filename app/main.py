@@ -30,6 +30,13 @@ from . import resilience, systemone, upstream
 from .analysis import PromptPairingError, apply_context_budget
 from .body_capture import BodyCaptureError, CaptureReason, CaptureStatus, ModelBodyCapture
 from .config import get_settings
+from .embeddings import (
+    EmbeddingRequestError,
+    embed_ollama,
+    parse_request as parse_embedding_request,
+    render_response as render_embedding_response,
+    settled_refusal,
+)
 from .models import RouteUnavailable, list_tags, resolve
 from .skill_use import ingest_skill_use_source
 from .obs import (
@@ -1699,6 +1706,83 @@ def _text_completion_response(model_name: str, result: upstream.UpstreamResult) 
         ],
         "usage": _usage_block(result),
     }
+
+
+@app.post("/v1/embeddings")
+async def embeddings(request: Request) -> Response:
+    """OpenAI embeddings, served only by a local Ollama embedding model (#8650)."""
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "invalid JSON body", "invalid_request_error")
+    if not isinstance(body, dict):
+        return _error(400, "JSON body must be an object", "invalid_request_error")
+    return await _until_disconnect(request, _embeddings(body, request.headers))
+
+
+async def _embeddings(body: dict[str, Any], headers) -> Response:
+    """Resolve the route, then try each of its Ollama backends in order.
+
+    A hosted or LiteLLM backend is never tried: the corpus these vectors describe is
+    private, so an embedding route that cannot reach a local model fails closed.
+    docs/proxy-request-path.md.
+    """
+    try:
+        parsed = parse_embedding_request(body)
+    except EmbeddingRequestError as exc:
+        return _error(400, str(exc), "invalid_request_error")
+    requested_model = body.get("model")
+    model_name = requested_model if isinstance(requested_model, str) else ""
+    try:
+        model = await resolve(model_name) if model_name else None
+    except RouteUnavailable as exc:
+        return _error(503, str(exc), "model_unavailable")
+    if model is None:
+        return _error(404, f"unknown model '{requested_model}'", "model_not_found")
+    if shed := _rate_limited(model.name):
+        return shed
+    llm_route_requests_total.labels(
+        logical_model=model.name,
+        upstream_mode=model.upstream_mode,
+    ).inc()
+    local = [
+        backend
+        for backend in _apply_preference(model, headers).backends
+        if backend.dialect == "ollama"
+    ]
+    if not local:
+        return _error(
+            503,
+            f"route '{model.name}' has no local embedding backend, and embeddings never go to a hosted one",
+            "model_unavailable",
+        )
+    for backend in local:
+        try:
+            result = await embed_ollama(backend, parsed)
+        except upstream.UpstreamStatusError as exc:
+            log.warning(
+                "embeddings.upstream_status",
+                route=model.name,
+                status=exc.status_code,
+                body=exc.body,
+            )
+            if settled_refusal(exc):
+                llm_requests_total.labels(logical_model=model.name, outcome="error").inc()
+                return _error(
+                    400,
+                    f"route '{model.name}' does not accept this embedding request",
+                    "invalid_request_error",
+                )
+            continue
+        except upstream.UpstreamError as exc:
+            log.warning("embeddings.upstream_error", route=model.name, error=str(exc))
+            continue
+        llm_requests_total.labels(logical_model=model.name, outcome="ok").inc()
+        record_response_status(200)
+        return JSONResponse(render_embedding_response(model.name, parsed, result))
+    llm_requests_total.labels(logical_model=model.name, outcome="error").inc()
+    return _error(502, f"route '{model.name}' has no embedding backend answering", "upstream_error")
 
 
 @app.post("/v1/completions")
