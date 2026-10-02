@@ -588,6 +588,31 @@ def _sentry_within_budget(now: float) -> bool:
     return True
 
 
+def _active_trace_id() -> str | None:
+    """The active OTel trace id as 32 hex, or None. Never raises into Sentry."""
+    try:
+        from opentelemetry import trace
+
+        span_context = trace.get_current_span().get_span_context()
+    except Exception:
+        return None
+    return f"{span_context.trace_id:032x}" if span_context.is_valid else None
+
+
+def tag_sentry_with_trace(span: Any, _scope: Any = None) -> None:
+    """Server request hook: put the trace id on this request's Sentry scope while
+    the server span is open. Starlette's error middleware captures a crash after
+    that span has ended, so before_send alone finds no active span then."""
+    try:
+        import sentry_sdk
+
+        span_context = span.get_span_context()
+        if span_context.is_valid:
+            sentry_sdk.get_isolation_scope().set_tag("trace_id", f"{span_context.trace_id:032x}")
+    except Exception:
+        pass
+
+
 def _sentry_before_send(event: Event, _hint: dict[str, Any]) -> Event | None:
     if _health_observability_suppressed.get():
         return None
@@ -595,7 +620,13 @@ def _sentry_before_send(event: Event, _hint: dict[str, Any]) -> Event | None:
     url = request.get("url", "") if isinstance(request, dict) else ""
     if isinstance(url, str) and _is_health_path(url):
         return None
-    return event if _sentry_within_budget(time.monotonic()) else None
+    if not _sentry_within_budget(time.monotonic()):
+        return None
+    # So a Sentry issue opens the trace it came from. Sentry's own trace id is
+    # a different one, because traces_sample_rate is 0.
+    if (trace_id := _active_trace_id()) is not None:
+        event.setdefault("tags", {})["trace_id"] = trace_id
+    return event
 
 
 def _sentry_before_breadcrumb(

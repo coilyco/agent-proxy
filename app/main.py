@@ -59,6 +59,7 @@ from .obs import (
     record_error,
     record_prompt_cache_usage,
     record_response_status,
+    tag_sentry_with_trace,
 )
 from .ratelimit import get_rate_limiter
 from .readiness import UnknownRoute, check_route_readiness
@@ -173,6 +174,7 @@ def _instrument_fastapi(application: FastAPI, tracer_provider: Any = None) -> No
             # One ASGI send is one SSE frame, so the default `http send` child
             # span made a streamed turn cost a span per chunk (#140).
             exclude_spans=["send"],
+            server_request_hook=tag_sentry_with_trace,
         )
     except Exception:
         # Observability remains best-effort and must never block process startup.

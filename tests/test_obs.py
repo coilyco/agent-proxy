@@ -432,3 +432,66 @@ def test_sentry_reports_mcp_tool_errors_without_their_arguments(sentry_capture):
     assert client.get_integration("mcp") is not None
     # The MCP integration records tool arguments and results only with PII on.
     assert client.options["send_default_pii"] is False
+
+
+def test_a_sentry_event_carries_the_active_otel_trace_id():
+    from opentelemetry.sdk.trace import TracerProvider
+
+    tracer = TracerProvider().get_tracer("t")
+    with tracer.start_as_current_span("server") as span:
+        event = _sentry_before_send({"request": {"url": "http://proxy/v1/x"}}, {})
+        want = f"{span.get_span_context().trace_id:032x}"
+    assert event["tags"]["trace_id"] == want
+
+
+def test_a_sentry_event_outside_any_span_has_no_trace_id_tag():
+    event = _sentry_before_send({"request": {"url": "http://proxy/v1/x"}}, {})
+    assert "trace_id" not in event.get("tags", {})
+
+
+def test_a_real_crash_under_the_fastapi_instrumentor_carries_the_server_span_trace_id(
+    sentry_capture,
+):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    from app.main import _instrument_fastapi
+
+    app = _crash_app()
+    _instrument_fastapi(app, tracer_provider=provider)
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.post("/crash", json={"model": "m", "messages": []}).status_code == 500
+    sentry_sdk.flush()
+    (event,) = sentry_capture.events
+    server_traces = {f"{span.context.trace_id:032x}" for span in exporter.get_finished_spans()}
+    assert event["tags"]["trace_id"] in server_traces
+
+
+def test_two_crashes_each_carry_their_own_trace_id(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from app.main import _instrument_fastapi
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    app = _crash_app()
+    _instrument_fastapi(app, tracer_provider=provider)
+    client = TestClient(app, raise_server_exceptions=False)
+    for _ in range(2):
+        assert client.post("/crash", json={"model": "m", "messages": []}).status_code == 500
+    sentry_sdk.flush()
+    seen = [event["tags"]["trace_id"] for event in sentry_capture.events]
+    server_traces = {f"{span.context.trace_id:032x}" for span in exporter.get_finished_spans()}
+    assert len(seen) == 2 and len(set(seen)) == 2
+    assert set(seen) <= server_traces
