@@ -50,20 +50,12 @@ jobs:
       - name: Types (just typecheck)
         run: just typecheck
 
-      - name: Alert Telegram on main failure
+      - name: Alert Sentry on main failure
         if: ${{ failure() && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_RED_CHAT_ID }}
-          REPO: ${{ github.repository }}
-          WORKFLOW: ${{ github.workflow }}
-          JOB: ${{ github.job }}
-          REF: ${{ github.ref }}
-          SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          API_BASE: https://api.telegram.org
-        run: python3 scripts/telegram_alert.py
+          SENTRY_DSN: ${{ secrets.SENTRY_CI_DSN }}
+        run: python3 scripts/alert_sentry.py
   smoke:
     runs-on: docker
     container:
@@ -74,17 +66,9 @@ jobs:
         run: just boot-probe
       - name: Import/build smoke (just smoke)
         run: just smoke
-      - name: Alert Telegram on main failure
+      - name: Alert Sentry on main failure
         if: ${{ failure() && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_RED_CHAT_ID }}
-          REPO: ${{ github.repository }}
-          WORKFLOW: ${{ github.workflow }}
-          JOB: ${{ github.job }}
-          REF: ${{ github.ref }}
-          SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          API_BASE: https://api.telegram.org
-        run: python3 scripts/telegram_alert.py
+          SENTRY_DSN: ${{ secrets.SENTRY_CI_DSN }}
+        run: python3 scripts/alert_sentry.py
