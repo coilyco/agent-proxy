@@ -172,8 +172,8 @@ def _instrument_fastapi(application: FastAPI, tracer_provider: Any = None) -> No
             excluded_urls=HEALTH_TRACE_EXCLUDED_URLS,
             tracer_provider=tracer_provider,
             # One ASGI send is one SSE frame, so the default `http send` child
-            # span made a streamed turn cost a span per chunk (#140).
-            exclude_spans=["send"],
+            # span cost a span per chunk (#140), and `receive` did too.
+            exclude_spans=["send", "receive"],
             server_request_hook=tag_sentry_with_trace,
         )
     except Exception:

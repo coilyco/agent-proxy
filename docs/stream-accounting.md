@@ -24,6 +24,11 @@ per-chunk spans outright. The knob is per-app rather than per-route, so the
 single `http send` span on non-streaming responses goes with them. That span
 carried a status code the server span already reports, so nothing was lost.
 
+`"receive"` joined it on 2026-10-02. A sampled trace of one Sirens Deep turn held 899
+Agent Proxy spans, 868 of them `http receive`, and over 7 days at least 69
+percent of this service's spans were that kind. The server span already carries
+the request body size, so nothing was lost there either.
+
 The four numbers worth keeping ride on the `request.chat` span, where a single
 row now describes the whole stream:
 

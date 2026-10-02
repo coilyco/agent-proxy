@@ -76,7 +76,7 @@ def _request_chat_span(exporter):
 # The chunk spans themselves
 
 
-def test_asgi_send_spans_are_suppressed_but_the_server_span_survives():
+def test_asgi_send_and_receive_spans_are_suppressed_but_the_server_span_survives():
     """The real proof the exclusion is wired: no `http send`, still a server span.
 
     Asserting only the absence would pass vacuously if `instrument_app` raised
@@ -104,6 +104,9 @@ def test_asgi_send_spans_are_suppressed_but_the_server_span_survives():
     assert not [
         name for name in names if name.endswith("http send")
     ], f"per-chunk send spans came back: {names}"
+    assert not [
+        name for name in names if name.endswith("http receive")
+    ], f"receive spans came back: {names}"
 
 
 # The attributes that replace them
