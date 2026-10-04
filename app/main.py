@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -72,6 +72,8 @@ from .resilience import (
     request_deadline,
 )
 from .route_registry import initialize_route_registry
+from .session_usage import FORMAT as SESSION_USAGE_FORMAT
+from .session_usage import MAX_IDS_PER_READ, get_session_usage, record_request
 from .trajectory.api import router as trajectory_router
 from .trajectory.request_events import RequestLifecycle, RequestOutcome
 from .trajectory.schema import TrajectoryEvent
@@ -213,6 +215,19 @@ async def readyz(namespace: str, alias: str) -> JSONResponse:
         endpoint="readyz", outcome="ready" if result.ready else "not_ready"
     ).inc()
     return JSONResponse(status_code=200 if result.ready else 503, content=content)
+
+
+@app.get("/v1/sessions/usage")
+async def session_usage(ids: list[str] = Query(default=[], alias="id")) -> JSONResponse:
+    """Context usage per aterm session id, for the ids the proxy has seen (docs/operational-views.md)."""
+    if len(ids) > MAX_IDS_PER_READ:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"at most {MAX_IDS_PER_READ} id parameters per read"},
+        )
+    return JSONResponse(
+        content={"format": SESSION_USAGE_FORMAT, "sessions": get_session_usage().read(ids)}
+    )
 
 
 @app.get("/metrics")
@@ -600,6 +615,8 @@ def _emit_request_terminal(
     result: upstream.UpstreamResult | None = None,
 ) -> None:
     latency_ms = max(0, int((time.perf_counter() - started) * 1000))
+    if outcome == "succeeded" and result is not None:
+        record_request(lifecycle.trace_context, result)
     _emit_trajectory_event(
         lifecycle.execution_event(
             outcome,

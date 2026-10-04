@@ -77,3 +77,37 @@ Every view publishes:
 The view pipeline replays retained raw evidence, appends changed materialization
 revisions, and reassembles evaluation records. It cannot reconstruct events or
 bodies that were never captured or are outside the selected access tier.
+
+## Session usage
+
+The aterm client shows a context-token count per seat. A seat whose model
+endpoint is Agent Proxy writes no transcript that reports usage, so the proxy
+holds its count. `GET /v1/sessions/usage?id=<session>&id=<session>` answers
+`agent-proxy.session-usage.v1`, with `sessions` keyed by id.
+
+A succeeded request that carries `x-agent-session-id` is folded into a rollup in
+[`app/session_usage.py`](../app/session_usage.py) by `_emit_request_terminal`. A
+failed, rejected, or cancelled request is not counted, and neither is a caller
+with no header. Per session it keeps:
+
+* `context_tokens` - prompt plus completion of the latest request, which is what
+  the next prompt starts from. A request whose backend reported no usage counts
+  as a request and leaves it alone, so a silent backend cannot blank a reading.
+* `input_tokens`, `output_tokens`, `requests`, `model`, `first_seen`, `last_seen`.
+* `context_window` - the route's `context_window` from the
+  [route registry](route-registry.md), `null` when Deploy declares none. A
+  client shows a percent only when it is present.
+
+An id the proxy has not seen is absent, never zero. More than 64 `id` parameters
+is a 400, and an id outside `[A-Za-z0-9._:/@-]{1,128}` is never recorded.
+
+Caveats:
+
+* **No restart survival.** The rollup lives in the process, capped at 2048
+  sessions, least recently touched dropped first. After a restart a seat reads as
+  absent until its next turn. The trajectory store has no session index, so a
+  per-read scan would cost every poll the whole table.
+* **Backend-reported size.** An Ollama backend that reuses its KV cache counts
+  only the new prompt tokens, so a local route can read low.
+* **One process.** Hypercorn serves one process here. A second replica needs a
+  shared store, and this is the seam to change then.

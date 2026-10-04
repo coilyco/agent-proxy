@@ -6,7 +6,7 @@ Part of [FEATURES](FEATURES.md).
 
 
 - **OpenAI-compatible request surface** - landed - `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`, including streaming and normalized reasoning content. `tools`, `tool_choice`, `parallel_tool_calls`, and `seed` reach the backend that can honor them, and a tool constraint an ollama-dialect backend would ignore gets a local 400, not a run that looks constrained. See [proxy-request-path.md](proxy-request-path.md).
-- **Jev decision shim** - landed - `/v1/systemone` fronts TypeSafe's System One model in the vendor's shape, plus a flat-bodied `/v1/systemone/choice` sibling for a caller that cannot author the criteria map, with a mounted key the caller never holds. It emits the chat path's spans, metrics and trajectory events plus the proxy's first cost signal. Deploy wiring is separate. See [systemone-shim.md](systemone-shim.md).
+- **Jev decision shim** - landed - `/v1/systemone` fronts TypeSafe's System One model in the vendor's shape, plus a flat-bodied `/v1/systemone/choice` sibling for a caller that cannot author the criteria map, with a mounted key the caller never holds. It emits the chat path's spans, metrics and trajectory events plus the proxy's first cost signal. See [systemone-shim.md](systemone-shim.md).
 - **Remote MCP prompt surface** - landed - stateless Streamable HTTP at `/mcp`
   exposes model discovery and non-streaming prompt tools through the existing
   Agent Proxy policy, reliability, telemetry, and trajectory path. See
@@ -15,8 +15,9 @@ Part of [FEATURES](FEATURES.md).
   evaluation aliases hide physical backends from governed clients, route
   aliases through LiteLLM, and fail closed when direct rollback cannot serve a runtime. See
   [route-registry.md](route-registry.md).
+- **Per-session context usage** - landed - `GET /v1/sessions/usage?id=...` reports a seat's context tokens per `x-agent-session-id`. See [operational-views.md](operational-views.md).
 - **Backend-derived context safety** - landed - safe `num_ctx` derivation and injection, `OLLAMA_NUM_PARALLEL` compensation, context-budget trimming, and loud delivered-context truncation detection.
-- **Current gateway resilience** - landed - bounded in-memory queue and workers, queue backpressure, structural response validation, retry with backoff, fallback chains, and per-backend circuit breakers. Validation rejects only structurally broken output (empty, unparsable tool arguments, truncation garbage, degenerate repetition); it does not judge the meaning of assistant text.
+- **Current gateway resilience** - landed - bounded in-memory queue and workers, queue backpressure, structural response validation, retry with backoff, fallback chains, and per-backend circuit breakers.
 - **Operational evidence** - landed - trace-correlated structured JSON logs, Prometheus metrics, OpenTelemetry traces, closed-set SigNoz exception events for every handled runtime failure under a bounded 13-code taxonomy with stage tags, Sentry initialization, request spans, and Ollama final-response token plus phase-duration measurements for streaming and non-streaming requests.
 - **Stream accounting instead of chunk spans** - landed - a streamed completion
   emits no per-SSE-chunk `http send` span. Frame count, bytes, total duration,
