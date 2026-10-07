@@ -433,6 +433,8 @@ def fold_stream_usage(
         cache_usage_reported=reported,
         cache_read_tokens=read,
         cache_write_tokens=write,
+        retry_count=result.retry_count if result else 0,
+        fallback_from=list(result.fallback_from) if result else [],
         raw=payload,
     )
 

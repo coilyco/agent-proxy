@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Sequence
 
 from app.obs import RequestTraceContext
 from app.trajectory.producer import ProducerContext
@@ -130,14 +130,22 @@ class RequestLifecycle:
         *,
         result: UpstreamResult | None = None,
         latency_ms: int | None = None,
+        retry_count: int = 0,
+        fallback_from: Sequence[str] = (),
     ) -> TrajectoryEvent:
-        """Build one normalized terminal event without prompt or response bodies."""
+        """Build one normalized terminal event without prompt or response bodies.
+
+        A result carries its own retry and fallback counts. A request that failed
+        has none, so ``retry_count`` and ``fallback_from`` stand in for it.
+        """
 
         succeeded = outcome == "succeeded"
         request_tokens = result.prompt_eval_count if result is not None else None
         response_tokens = result.eval_count if result is not None else None
         provider_model = result.model if result is not None else self.trace_context.request_model
-        fallback_from = list(result.fallback_from) if result is not None else []
+        if result is not None:
+            retry_count, fallback_from = result.retry_count, result.fallback_from
+        fallback_from = list(fallback_from)
         model_execution: dict[str, object] = {
             "model": self.trace_context.logical_model,
             "provider": "current-gateway",
@@ -150,7 +158,7 @@ class RequestLifecycle:
                 else None
             ),
             "latency_ms": latency_ms,
-            "retry_count": result.retry_count if result is not None else 0,
+            "retry_count": retry_count,
             "fallback_count": len(fallback_from),
             "fallback_from": fallback_from,
             "finish_reason": result.done_reason if result is not None else None,

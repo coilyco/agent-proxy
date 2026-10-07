@@ -58,7 +58,7 @@ Model-request, model-response, and execution events include `payload.model_execu
 
 - Use OpenTelemetry and OpenTelemetry GenAI semantic convention names in `attributes` where they fit, including `service.name`, `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.response.model`, and applicable `gen_ai.usage.*` fields.
 - Record domain joins and policy facts under `agentproxy.*`, including `agentproxy.policy.decision`, `agentproxy.ward.run_id`, `agentproxy.episode.id`, `agentproxy.context.safe_limit`, and `agentproxy.context.truncated`.
-- `retry_count` counts reattempts across the whole request, `fallback_from` names the chain entries passed over in order, `fallback_count` is its length, and `finish_reason` describes the final observed attempt. The request ledger fills them for non-streaming requests (COI-2222). Individual attempts can be emitted as separate execution or observation events with their own ids.
+- `retry_count` counts reattempts across the whole request, `fallback_from` names the chain entries passed over in order, `fallback_count` is its length, and `finish_reason` describes the final observed attempt. The request ledger fills them for served and failed requests, streamed or not (COI-2222, COI-2454). A stream is never retried, so its `retry_count` is 0. A failed request lists every entry it was refused by, the last included. Individual attempts can be emitted as separate execution or observation events with their own ids.
 - Token counts, latency, and cost may be `null` when unavailable. A consumer must distinguish unavailable from zero.
 
 ## Continued

@@ -25,7 +25,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Sequence
 
 from .config import get_settings
 from .analysis import count_message_tokens, detect_context_truncation
@@ -66,7 +66,22 @@ def _observe_ollama_measurements(
 
 
 class BackendUnavailable(Exception):
-    """Dispatch could not get a usable response out of the backend chain."""
+    """Dispatch could not get a usable response out of the backend chain.
+
+    Carries what the request spent before failing, because the request ledger
+    reads it from here when there is no result to read it from (COI-2454).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_count: int = 0,
+        fallback_from: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.retry_count = retry_count
+        self.fallback_from = list(fallback_from)
 
 
 class AllBackendsFailed(BackendUnavailable):
@@ -87,10 +102,23 @@ class UpstreamRequestRejected(Exception):
     reported as a backend failure (issue #114).
     """
 
-    def __init__(self, message: str, status_code: int, body: str = "") -> None:
+    def __init__(
+        self,
+        message: str,
+        status_code: int,
+        body: str = "",
+        *,
+        retry_count: int = 0,
+        fallback_from: Sequence[str] = (),
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+        self.retry_count = retry_count
+        self.fallback_from = list(fallback_from)
+
+
+DispatchFailure = BackendUnavailable | UpstreamRequestRejected
 
 
 class ContextTruncated(Exception):
@@ -128,6 +156,10 @@ class RequestDeadlineExceeded(BackendUnavailable):
 # Key on a stream chunk that carries proxy progress rather than model output.
 # The streaming surface turns it into an SSE comment (#104).
 STREAM_STATE_KEY = "agentproxy.state"
+
+# Key dispatch_stream stamps on the done chunk: the chain entries the request
+# passed over before the serving backend. Read by the request ledger (COI-2454).
+STREAM_FALLBACK_KEY = "agentproxy.fallback_from"
 
 
 def _state_chunk(state: str, **fields: Any) -> dict[str, Any]:
@@ -223,6 +255,8 @@ def _deadline_exceeded(
     trace_ctx: RequestTraceContext | None,
     backend: Backend,
     attempt_span: Any,
+    retries: int = 0,
+    passed_over: Sequence[str] = (),
 ) -> RequestDeadlineExceeded:
     log.warning(
         "dispatch.deadline_exceeded",
@@ -231,7 +265,11 @@ def _deadline_exceeded(
     if attempt_span is not None:
         attempt_span.set_attribute("agentproxy.outcome", "deadline-exceeded")
     record_error("request_deadline_exceeded", attempt_span)
-    return RequestDeadlineExceeded(f"{model.name}: request deadline exceeded before the response")
+    return RequestDeadlineExceeded(
+        f"{model.name}: request deadline exceeded before the response",
+        retry_count=retries,
+        fallback_from=passed_over,
+    )
 
 
 # Response validation
@@ -530,7 +568,9 @@ async def dispatch(
                 try:
                     budget = _remaining_budget(deadline)
                     if budget is not None and budget <= 0:
-                        raise _deadline_exceeded(model, trace_ctx, backend, attempt_span)
+                        raise _deadline_exceeded(
+                            model, trace_ctx, backend, attempt_span, retries, passed_over
+                        )
                     start = _now()
                     # wait_for cancels the attempt at the deadline, which closes
                     # the httpx request and with it the upstream connection.
@@ -563,7 +603,9 @@ async def dispatch(
                     # wait_for already cancelled the attempt, so the upstream
                     # connection is closed rather than left generating.
                     if _out_of_budget(deadline):
-                        raise _deadline_exceeded(model, trace_ctx, backend, attempt_span) from exc
+                        raise _deadline_exceeded(
+                            model, trace_ctx, backend, attempt_span, retries, passed_over
+                        ) from exc
                     # Slow, not spent: the backend is the problem, so advance
                     # the chain. docs/saturation-failover.md.
                     last_error = str(_saturated(model, trace_ctx, backend, attempt_span))
@@ -592,6 +634,8 @@ async def dispatch(
                             f"{model.name}: upstream rejected the request ({exc})",
                             status_code=exc.status_code,
                             body=exc.body,
+                            retry_count=retries,
+                            fallback_from=passed_over,
                         ) from exc
                     breakers.record_failure(backend)
                     last_error = str(exc)
@@ -749,20 +793,28 @@ async def dispatch(
                 **request_log_fields(trace_ctx, backend=backend.name, outcome="fallback"),
             )
 
-    raise _chain_exhausted(model, attempted_backends, last_error)
+    raise _chain_exhausted(model, attempted_backends, last_error, retries, passed_over)
 
 
 def _chain_exhausted(
-    model: LogicalModel, attempted: list[str], last_error: str
+    model: LogicalModel,
+    attempted: list[str],
+    last_error: str,
+    retries: int = 0,
+    passed_over: Sequence[str] = (),
 ) -> BackendUnavailable:
     """Name the failure after what was actually attempted (issue #114)."""
     if len(attempted) > 1:
         return AllBackendsFailed(
-            f"{model.name}: all {len(attempted)} backends failed ({last_error})"
+            f"{model.name}: all {len(attempted)} backends failed ({last_error})",
+            retry_count=retries,
+            fallback_from=passed_over,
         )
     if attempted:
-        return BackendUnavailable(f"{model.name}: backend {attempted[0]} failed ({last_error})")
-    return BackendUnavailable(f"{model.name}: no backend was available ({last_error})")
+        message = f"{model.name}: backend {attempted[0]} failed ({last_error})"
+    else:
+        message = f"{model.name}: no backend was available ({last_error})"
+    return BackendUnavailable(message, retry_count=retries, fallback_from=passed_over)
 
 
 async def dispatch_resilient(
@@ -827,10 +879,14 @@ async def dispatch_stream(
     """
     last_error = "no backends"
     attempted_backends: list[str] = []
+    # Connect-time fallback only: a stream is never retried, so nothing to count
+    # beyond the entries passed over.
+    passed_over: list[str] = []
     trace_attrs = trace_ctx.attrs() if trace_ctx else None
     candidates = len(model.backends)
     for index, backend in enumerate(model.backends):
         if not breakers.allow(backend):
+            passed_over.append(backend.name)
             continue
         attempted_backends.append(backend.name)
         # A silent retry storm is indistinguishable from one slow attempt from
@@ -845,7 +901,7 @@ async def dispatch_stream(
         try:
             first = True
             if _out_of_budget(deadline):
-                raise _deadline_exceeded(model, trace_ctx, backend, None)
+                raise _deadline_exceeded(model, trace_ctx, backend, None, 0, passed_over)
             stream = upstream.chat_stream(
                 backend,
                 model.num_ctx,
@@ -862,17 +918,19 @@ async def dispatch_stream(
                     first = False
                     yield _state_chunk("upstream_started", backend=backend.name)
                 elif _out_of_budget(deadline):
-                    raise _deadline_exceeded(model, trace_ctx, backend, None)
+                    raise _deadline_exceeded(model, trace_ctx, backend, None, 0, passed_over)
                 if chunk.get("done"):
                     result = upstream.parse_stream_result(chunk, backend.ollama_tag)
                     _observe_ollama_measurements(model.name, backend, result)
+                    chunk = {**chunk, STREAM_FALLBACK_KEY: list(passed_over)}
                 yield chunk
             breakers.record_success(backend)
             return
         except TimeoutError as exc:
             if _out_of_budget(deadline):
-                raise _deadline_exceeded(model, trace_ctx, backend, None) from exc
+                raise _deadline_exceeded(model, trace_ctx, backend, None, 0, passed_over) from exc
             last_error = str(_saturated(model, trace_ctx, backend, None))
+            passed_over.append(backend.name)
             yield _state_chunk("backend_saturated", backend=backend.name, failing_over=True)
             continue
         except asyncio.CancelledError:
@@ -899,8 +957,10 @@ async def dispatch_stream(
                     f"{model.name}: upstream rejected the request ({exc})",
                     status_code=exc.status_code,
                     body=exc.body,
+                    fallback_from=passed_over,
                 ) from exc
             breakers.record_failure(backend)
+            passed_over.append(backend.name)
             last_error = str(exc)
             log.warning(
                 "stream.transport_error",
@@ -909,10 +969,13 @@ async def dispatch_stream(
                 ),
             )
             if not first:
-                raise _chain_exhausted(model, attempted_backends, last_error) from exc
+                raise _chain_exhausted(
+                    model, attempted_backends, last_error, 0, passed_over
+                ) from exc
             continue
         except UpstreamError as exc:
             breakers.record_failure(backend)
+            passed_over.append(backend.name)
             last_error = str(exc)
             log.warning(
                 "stream.transport_error",
@@ -923,7 +986,8 @@ async def dispatch_stream(
             # Only safe to fall back if nothing was emitted yet.
             if not first:
                 raise BackendUnavailable(
-                    f"{model.name}: stream broke mid-flight ({last_error})"
+                    f"{model.name}: stream broke mid-flight ({last_error})",
+                    fallback_from=passed_over,
                 ) from exc
             continue
-    raise _chain_exhausted(model, attempted_backends, last_error)
+    raise _chain_exhausted(model, attempted_backends, last_error, 0, passed_over)

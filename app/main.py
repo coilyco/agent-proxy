@@ -613,6 +613,7 @@ def _emit_request_terminal(
     *,
     started: float,
     result: upstream.UpstreamResult | None = None,
+    failure: resilience.DispatchFailure | None = None,
 ) -> None:
     latency_ms = max(0, int((time.perf_counter() - started) * 1000))
     if outcome == "succeeded" and result is not None:
@@ -622,6 +623,8 @@ def _emit_request_terminal(
             outcome,
             result=result,
             latency_ms=latency_ms,
+            retry_count=failure.retry_count if failure is not None else 0,
+            fallback_from=failure.fallback_from if failure is not None else (),
         )
     )
 
@@ -886,6 +889,7 @@ async def _stream_chat(
         finish = "stop"
         outcome = "ok"
         terminal_result: upstream.UpstreamResult | None = None
+        failure: resilience.DispatchFailure | None = None
         terminal_span = request_span
         span_cm = tracer.start_as_current_span("request.chat") if tracer is not None else None
         content_parts: list[str] = []
@@ -966,6 +970,9 @@ async def _stream_chat(
                 if chunk.get("done"):
                     finish = "length" if chunk.get("done_reason") == "length" else "stop"
                     terminal_result = upstream.parse_stream_result(chunk, model_name)
+                    terminal_result.fallback_from = list(
+                        chunk.get(resilience.STREAM_FALLBACK_KEY) or []
+                    )
                     if tool_calls and finish == "stop":
                         finish = "tool_calls"
                     if terminal_span is not None:
@@ -1017,9 +1024,11 @@ async def _stream_chat(
                 outcome="request-rejected",
                 upstream_status=exc.status_code,
             )
+            failure = exc
             finish = "stop"
             outcome = "request-rejected"
         except BackendUnavailable as exc:
+            failure = exc
             record_error("stream_failed", terminal_span)
             log.warning("stream.failed", **trace_ctx.attrs(), error=str(exc), outcome="failed")
             finish = "stop"
@@ -1080,6 +1089,7 @@ async def _stream_chat(
                 "succeeded" if outcome == "ok" else "stream_failed",
                 started=started,
                 result=terminal_result,
+                failure=failure,
             )
             final: dict[str, Any] = {
                 **base,
@@ -1332,7 +1342,7 @@ async def _chat_completions(
             return _error(502, str(exc), "context_truncated")
         except UpstreamRequestRejected as exc:
             error_body = _upstream_rejection_body(exc)
-            _emit_request_terminal(lifecycle, "upstream_rejected", started=started)
+            _emit_request_terminal(lifecycle, "upstream_rejected", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="request_rejected").inc()
             _emit_capture_response(
                 capture,
@@ -1354,7 +1364,7 @@ async def _chat_completions(
             return JSONResponse(status_code=exc.status_code, content=error_body)
         except RequestDeadlineExceeded as exc:
             error_body = _error_body(str(exc), "request_deadline_exceeded")
-            _emit_request_terminal(lifecycle, "deadline_exceeded", started=started)
+            _emit_request_terminal(lifecycle, "deadline_exceeded", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="deadline_exceeded").inc()
             _emit_capture_response(
                 capture,
@@ -1374,7 +1384,7 @@ async def _chat_completions(
             return _error(504, str(exc), "request_deadline_exceeded")
         except BackendUnavailable as exc:
             error_body = _error_body(str(exc), "upstream_error")
-            _emit_request_terminal(lifecycle, "upstream_failed", started=started)
+            _emit_request_terminal(lifecycle, "upstream_failed", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="failed").inc()
             _emit_capture_response(
                 capture,
@@ -1956,7 +1966,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             return _error(502, str(exc), "context_truncated")
         except UpstreamRequestRejected as exc:
             error_body = _upstream_rejection_body(exc)
-            _emit_request_terminal(lifecycle, "upstream_rejected", started=started)
+            _emit_request_terminal(lifecycle, "upstream_rejected", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="request_rejected").inc()
             _emit_capture_response(
                 capture,
@@ -1978,7 +1988,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             return JSONResponse(status_code=exc.status_code, content=error_body)
         except RequestDeadlineExceeded as exc:
             error_body = _error_body(str(exc), "request_deadline_exceeded")
-            _emit_request_terminal(lifecycle, "deadline_exceeded", started=started)
+            _emit_request_terminal(lifecycle, "deadline_exceeded", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="deadline_exceeded").inc()
             _emit_capture_response(
                 capture,
@@ -1998,7 +2008,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             return _error(504, str(exc), "request_deadline_exceeded")
         except BackendUnavailable as exc:
             error_body = _error_body(str(exc), "upstream_error")
-            _emit_request_terminal(lifecycle, "upstream_failed", started=started)
+            _emit_request_terminal(lifecycle, "upstream_failed", started=started, failure=exc)
             llm_requests_total.labels(logical_model=model.name, outcome="failed").inc()
             _emit_capture_response(
                 capture,
