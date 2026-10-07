@@ -19,6 +19,10 @@
 # Assumes this Forgejo instance has an Actions runner labelled `docker` for the
 # repo; if it does not yet, this workflow is still the correct artifact and starts
 # gating as soon as one is attached (agent-proxy#31).
+#
+# workflow_dispatch is the retry path for a main run lost to a runner egress
+# timeout: Forgejo 16 has no API rerun for push runs and the aosguard rerun verb
+# refuses them by design.
 
 name: ci
 
@@ -26,6 +30,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
