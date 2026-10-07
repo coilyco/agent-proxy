@@ -137,6 +137,7 @@ class RequestLifecycle:
         request_tokens = result.prompt_eval_count if result is not None else None
         response_tokens = result.eval_count if result is not None else None
         provider_model = result.model if result is not None else self.trace_context.request_model
+        fallback_from = list(result.fallback_from) if result is not None else []
         model_execution: dict[str, object] = {
             "model": self.trace_context.logical_model,
             "provider": "current-gateway",
@@ -149,9 +150,9 @@ class RequestLifecycle:
                 else None
             ),
             "latency_ms": latency_ms,
-            "retry_count": 0,
-            "fallback_count": 0,
-            "fallback_from": [],
+            "retry_count": result.retry_count if result is not None else 0,
+            "fallback_count": len(fallback_from),
+            "fallback_from": fallback_from,
             "finish_reason": result.done_reason if result is not None else None,
         }
         return self.producer.event(

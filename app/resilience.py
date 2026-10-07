@@ -490,6 +490,8 @@ async def dispatch(
     settings = get_settings()
     last_error: str = "no backends"
     attempted_backends: list[str] = []
+    passed_over: list[str] = []
+    retries = 0
     tracer = get_tracer()
     trace_attrs = trace_ctx.attrs() if trace_ctx else None
     # The proxy's own prompt count, identical across attempts, held once as the
@@ -499,6 +501,7 @@ async def dispatch(
     for idx, backend in enumerate(model.backends):
         if not breakers.allow(backend):
             last_error = f"{backend.name} circuit open"
+            passed_over.append(backend.name)
             if idx + 1 < len(model.backends):
                 llm_fallbacks_total.labels(logical_model=model.name, backend=backend.name).inc()
             log.warning(
@@ -609,6 +612,7 @@ async def dispatch(
                         llm_retries_total.labels(
                             logical_model=model.name, backend=backend.name
                         ).inc()
+                        retries += 1
                         log.info(
                             "dispatch.retry",
                             **request_log_fields(
@@ -634,6 +638,7 @@ async def dispatch(
                         llm_retries_total.labels(
                             logical_model=model.name, backend=backend.name
                         ).inc()
+                        retries += 1
                         log.info(
                             "dispatch.retry",
                             **request_log_fields(
@@ -646,6 +651,8 @@ async def dispatch(
 
                 result.served_by = backend.name
                 result.served_regime = backend.regime
+                result.retry_count = retries
+                result.fallback_from = list(passed_over)
                 ok, reason = validate_response(result)
                 if ok:
                     breakers.record_success(backend)
@@ -685,6 +692,7 @@ async def dispatch(
                     attempt_span.set_attribute("agentproxy.validation_reason", reason)
                 if attempt < settings.max_retries:
                     llm_retries_total.labels(logical_model=model.name, backend=backend.name).inc()
+                    retries += 1
                     log.info(
                         "dispatch.retry",
                         **request_log_fields(
@@ -733,6 +741,7 @@ async def dispatch(
                 if attempt_span_cm is not None:
                     attempt_span_cm.__exit__(None, None, None)
 
+        passed_over.append(backend.name)
         if idx + 1 < len(model.backends):
             llm_fallbacks_total.labels(logical_model=model.name, backend=backend.name).inc()
             log.warning(

@@ -100,6 +100,10 @@ class UpstreamResult:
     # Stamped by dispatch, because only it knows which chain entry won.
     served_by: str = ""
     served_regime: str = ""
+    # What dispatch spent before this result: reattempts across the whole request
+    # and the chain entries passed over, in order. Feeds the request ledger.
+    retry_count: int = 0
+    fallback_from: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     def ollama_measurements_ms(self) -> dict[str, float]:

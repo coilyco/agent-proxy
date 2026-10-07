@@ -16,8 +16,9 @@ import pytest
 
 from app import resilience, upstream
 from app.models import Backend, LogicalModel
-from app.obs import llm_fallbacks_total, llm_retries_total
+from app.obs import RequestTraceContext, llm_fallbacks_total, llm_retries_total
 from app.resilience import AllBackendsFailed, BackendUnavailable, UnknownModel
+from app.trajectory.request_events import RequestLifecycle
 from app.upstream import UpstreamError, UpstreamResult, UpstreamStatusError
 
 
@@ -233,3 +234,80 @@ async def test_retryable_statuses_still_retry(monkeypatch, status):
 
     assert result.content == "recovered"
     assert calls["n"] == 2
+
+
+def _ledger_row(result: UpstreamResult):
+    """The model_execution block the request ledger writes for a served result."""
+    lifecycle = RequestLifecycle.from_trace_context(
+        RequestTraceContext(
+            logical_model="m", request_model="m", request_kind="chat", request_id="ledger-req"
+        )
+    )
+    return lifecycle.execution_event(
+        "succeeded", result=result, latency_ms=1
+    ).payload.model_execution
+
+
+async def test_ledger_records_two_retries_then_served(monkeypatch):
+    backend = Backend(name="b-ledger-retry", url="http://x", ollama_tag="t")
+    model = LogicalModel("ledger:retry", 4096, [backend])
+    _install_resolve(monkeypatch, model)
+    calls = {"n": 0}
+
+    async def flaky(be, num_ctx, messages, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise UpstreamError("transient")
+        return _good()
+
+    monkeypatch.setattr(upstream, "chat", flaky)
+
+    row = _ledger_row(
+        await resilience.dispatch_resilient(model.name, [{"role": "user", "content": "hi"}])
+    )
+
+    assert row.retry_count == 2
+    assert row.fallback_count == 0
+    assert row.fallback_from == []
+
+
+async def test_ledger_records_fallback_served(monkeypatch):
+    primary = Backend(name="b-ledger-primary", url="http://x", ollama_tag="t")
+    secondary = Backend(name="b-ledger-secondary", url="http://y", ollama_tag="t")
+    model = LogicalModel("ledger:fallback", 4096, [primary, secondary])
+    _install_resolve(monkeypatch, model)
+
+    async def chat(be, num_ctx, messages, **kwargs):
+        if be.name == primary.name:
+            raise UpstreamError("dead primary")
+        return _good()
+
+    monkeypatch.setattr(upstream, "chat", chat)
+
+    result = await resilience.dispatch_resilient(model.name, [{"role": "user", "content": "hi"}])
+    row = _ledger_row(result)
+
+    assert result.served_by == secondary.name
+    assert row.fallback_count == 1
+    assert row.fallback_from == [primary.name]
+    # Retries burned on the dead primary still count against the request.
+    assert row.retry_count == resilience.get_settings().max_retries
+
+
+async def test_ledger_records_zero_without_retry_or_fallback(monkeypatch):
+    backend = Backend(name="b-ledger-clean", url="http://x", ollama_tag="t")
+    model = LogicalModel("ledger:clean", 4096, [backend])
+    _install_resolve(monkeypatch, model)
+
+    async def chat(be, num_ctx, messages, **kwargs):
+        return _good()
+
+    monkeypatch.setattr(upstream, "chat", chat)
+
+    row = _ledger_row(
+        await resilience.dispatch_resilient(model.name, [{"role": "user", "content": "hi"}])
+    )
+
+    assert row.retry_count == 0
+    assert row.fallback_count == 0
+    assert row.fallback_from == []
