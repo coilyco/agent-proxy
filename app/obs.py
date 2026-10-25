@@ -12,8 +12,8 @@ have a single source of truth.
 from __future__ import annotations
 
 import logging
+import re
 import sys
-import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -241,6 +241,67 @@ def _add_trace_context(
     return event_dict
 
 
+# Allowlist, because free-text fields (`error`, `reason`) can hold model text.
+# The namespaced names are what RequestTraceContext.attrs() writes.
+SENTRY_LOG_ATTRIBUTES = frozenset(
+    {
+        "logical_model",
+        "request_kind",
+        "upstream_mode",
+        "request_id",
+        "agentproxy.logical_model",
+        "agentproxy.request_kind",
+        "agentproxy.upstream_mode",
+        "agentproxy.request_id",
+        "outcome",
+        "upstream_status",
+        "backend",
+        "trace_id",
+        "span_id",
+    }
+)
+_LOG_EVENT_NAME = re.compile(r"[a-z0-9_.-]+")
+
+
+def _forward_error_to_sentry_logs(
+    _logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """Send one error-level line to Sentry Logs as its event name plus allowlisted fields."""
+    if method_name not in ("error", "critical"):
+        return event_dict
+    try:
+        import sentry_sdk
+
+        if not sentry_sdk.get_client().is_active():
+            return event_dict
+        attributes = {
+            key: value
+            for key, value in event_dict.items()
+            if key in SENTRY_LOG_ATTRIBUTES and isinstance(value, (str, int, float, bool))
+        }
+        send = sentry_sdk.logger.fatal if method_name == "critical" else sentry_sdk.logger.error
+        send(str(event_dict.get("event", "")), attributes=attributes)
+    except Exception:
+        pass
+    return event_dict
+
+
+def _sentry_before_send_log(log_record: Any, _hint: dict[str, Any]) -> Any:
+    """Last gate on Sentry Logs: a body that is not an event name, or any field
+    outside the allowlist, never leaves the process."""
+    if _health_observability_suppressed.get():
+        return None
+    if not _LOG_EVENT_NAME.fullmatch(str(log_record.get("body", ""))):
+        return None
+    attributes = log_record.get("attributes") or {}
+    log_record["attributes"] = {
+        key: value
+        for key, value in attributes.items()
+        if key in SENTRY_LOG_ATTRIBUTES or key.startswith("sentry.")
+    }
+    return log_record
+
+
 def _configure_structlog(log_level: str) -> None:
     """JSON logs to stdout, shared processor chain, level from settings."""
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -254,6 +315,7 @@ def _configure_structlog(log_level: str) -> None:
             _drop_suppressed_health_log,
             structlog.contextvars.merge_contextvars,
             _add_trace_context,
+            _forward_error_to_sentry_logs,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
@@ -572,22 +634,6 @@ def emit_instrumented_action(action: InstrumentedAction) -> None:
         span.set_attribute(key, value)
 
 
-SENTRY_EVENTS_PER_MINUTE = 20
-_sentry_window: list[float] = []
-
-
-def _sentry_within_budget(now: float) -> bool:
-    """Cap events per process so one hot loop cannot spend the monthly quota."""
-
-    cutoff = now - 60.0
-    while _sentry_window and _sentry_window[0] < cutoff:
-        _sentry_window.pop(0)
-    if len(_sentry_window) >= SENTRY_EVENTS_PER_MINUTE:
-        return False
-    _sentry_window.append(now)
-    return True
-
-
 def _active_trace_id() -> str | None:
     """The active OTel trace id as 32 hex, or None. Never raises into Sentry."""
     try:
@@ -620,13 +666,41 @@ def _sentry_before_send(event: Event, _hint: dict[str, Any]) -> Event | None:
     url = request.get("url", "") if isinstance(request, dict) else ""
     if isinstance(url, str) and _is_health_path(url):
         return None
-    if not _sentry_within_budget(time.monotonic()):
-        return None
-    # So a Sentry issue opens the trace it came from. Sentry's own trace id is
-    # a different one, because traces_sample_rate is 0.
+    # So a Sentry issue opens the OTel trace it came from. Sentry's own trace id
+    # is a different one.
     if (trace_id := _active_trace_id()) is not None:
         event.setdefault("tags", {})["trace_id"] = trace_id
     return event
+
+
+def _sentry_before_send_transaction(event: Event, _hint: dict[str, Any]) -> Event | None:
+    if _health_observability_suppressed.get():
+        return None
+    request = event.get("request") or {}
+    url = request.get("url", "") if isinstance(request, dict) else ""
+    if isinstance(url, str) and _is_health_path(url):
+        return None
+    # A trace needs the route and timings, never the body. The key scrubber covers
+    # a JSON body, and this covers one it cannot read, such as plain text.
+    if isinstance(request, dict):
+        request.pop("data", None)
+    if (trace_id := _active_trace_id()) is not None:
+        event.setdefault("tags", {})["trace_id"] = trace_id
+    return event
+
+
+def _make_traces_sampler(rate: float) -> Callable[[dict[str, Any]], float]:
+    """Sample at ``rate``, never a health probe, and as a Sentry-instrumented caller decided."""
+
+    def sampler(context: dict[str, Any]) -> float:
+        scope = context.get("asgi_scope") or {}
+        if _is_health_path(str(scope.get("path", ""))):
+            return 0.0
+        if (parent := context.get("parent_sampled")) is not None:
+            return 1.0 if parent else 0.0
+        return rate
+
+    return sampler
 
 
 def _sentry_before_breadcrumb(
@@ -669,9 +743,11 @@ SENTRY_USER_DATA_KEYS = [
 ]
 
 
-def _configure_sentry(dsn: str, service_name: str) -> None:
+def _configure_sentry(dsn: str, service_name: str, traces_sample_rate: float | None = None) -> None:
     if not dsn:
         return
+    if traces_sample_rate is None:
+        traces_sample_rate = get_settings().sentry_traces_sample_rate
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -679,11 +755,14 @@ def _configure_sentry(dsn: str, service_name: str) -> None:
         from sentry_sdk.integrations.starlette import StarletteIntegration
         from sentry_sdk.scrubber import DEFAULT_DENYLIST, EventScrubber
 
-        # Crashes only (teable:coilyco/deploy#8347), fully annotated: every
-        # integration stays on, and only these three are kept from raising events.
+        # Errors are crashes only (teable:coilyco/deploy#8347). Traces are Sentry's own
+        # spans, since OTel attributes carry model I/O. Logs: docs/proxy-operations.md.
         sentry_sdk.init(
             dsn=dsn,
-            traces_sample_rate=0.0,
+            traces_sampler=_make_traces_sampler(traces_sample_rate),
+            enable_logs=True,
+            before_send_log=_sentry_before_send_log,
+            before_send_transaction=_sentry_before_send_transaction,
             environment=service_name,
             before_send=_sentry_before_send,
             before_breadcrumb=_sentry_before_breadcrumb,
@@ -692,7 +771,7 @@ def _configure_sentry(dsn: str, service_name: str) -> None:
                 denylist=DEFAULT_DENYLIST + SENTRY_USER_DATA_KEYS, recursive=True
             ),
             integrations=[
-                LoggingIntegration(event_level=None),
+                LoggingIntegration(event_level=None, sentry_logs_level=None),
                 StarletteIntegration(failed_request_status_codes=set()),
                 FastApiIntegration(failed_request_status_codes=set()),
             ],

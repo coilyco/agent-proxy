@@ -18,7 +18,7 @@ Part of [FEATURES](FEATURES.md).
 - **Per-session context usage** - landed - `GET /v1/sessions/usage?id=...` reports a seat's context tokens per `x-agent-session-id`. See [operational-views.md](operational-views.md).
 - **Backend-derived context safety** - landed - safe `num_ctx` derivation and injection, `OLLAMA_NUM_PARALLEL` compensation, context-budget trimming, and loud delivered-context truncation detection.
 - **Current gateway resilience** - landed - bounded in-memory queue and workers, queue backpressure, structural response validation, retry with backoff, fallback chains, and per-backend circuit breakers.
-- **Operational evidence** - landed - trace-correlated structured JSON logs, Prometheus metrics, OpenTelemetry traces, closed-set SigNoz exception events for every handled runtime failure under a bounded 13-code taxonomy with stage tags, Sentry initialization, request spans, and Ollama final-response token plus phase-duration measurements for streaming and non-streaming requests.
+- **Operational evidence** - landed - trace-correlated structured JSON logs, Prometheus metrics, OpenTelemetry traces, closed-set SigNoz exception events for every handled runtime failure under a bounded 13-code taxonomy with stage tags, Sentry crashes, traces and error logs, request spans, and Ollama final-response token plus phase-duration measurements for streaming and non-streaming requests.
 - **Stream accounting instead of chunk spans** - landed - a streamed completion
   emits no per-SSE-chunk `http send` span. Frame count, bytes, total duration,
   and first-token latency ride on the request span instead, so a trace holding a
