@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     # Observability wiring (leg 04 step 1).
     sentry_dsn: str = Field(default="")
     # Share of requests Sentry keeps as a trace. Sizing: docs/proxy.md.
-    sentry_traces_sample_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    sentry_traces_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     otel_exporter_otlp_endpoint: str = Field(default="")
     service_name: str = Field(default="agent-proxy")
     trace_bodies: bool = Field(default=False)

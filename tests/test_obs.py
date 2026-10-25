@@ -632,3 +632,9 @@ def test_a_failed_agent_proxy_request_is_a_sentry_trace_and_an_error_log(
     assert attributes["agentproxy.logical_model"] == "qwen3:4b"
     assert not {"error", "agent.origin", "gen_ai.request.model"} & attributes.keys()
     assert secret not in json.dumps([sentry_capture.transactions, sentry_capture.logs])
+
+
+def test_sentry_traces_every_request_by_default():
+    from app.config import Settings
+
+    assert Settings().sentry_traces_sample_rate == 1.0

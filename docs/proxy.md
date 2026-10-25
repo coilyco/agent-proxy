@@ -94,7 +94,7 @@ secret is committed. Key knobs:
 * `PROXY_SENTRY_DSN`, `PROXY_OTEL_EXPORTER_OTLP_ENDPOINT` - observability. Both
   degrade to no-ops when unset.
 * `PROXY_SENTRY_TRACES_SAMPLE_RATE` - share of requests Sentry keeps as a trace,
-  0 to 1, default 0.05. See [Sentry](proxy-operations.md#sentry).
+  0 to 1, default 1.0. See [Sentry](proxy-operations.md#sentry).
 * `PROXY_TRACE_BODIES` - opt-in model I/O capture, defaulting to off. The
   repository implementation captures every request and response body field when
   enabled and fails hard on capture loss. The restricted ser8 deployment and

@@ -96,10 +96,10 @@ Sentry carries three things, all off when no DSN is configured:
 * **Errors** - unhandled crashes only, with no per-minute cap. The Team plan
   budget (50k errors a month) is the limit, and handled failures stay in SigNoz.
 * **Traces** - Sentry's own FastAPI spans, kept at `PROXY_SENTRY_TRACES_SAMPLE_RATE`
-  (default 0.05). Health, readiness and metrics paths are never traced, and a
-  caller that already decided to sample or not (`sentry-trace` header) wins. The
-  rate is provisional. It was set from the 5M span monthly budget, not from a
-  measured request count, so size it against the Sentry usage page after a week.
+  (default 1.0, no sampling cap). Health, readiness and metrics paths are never
+  traced, and a caller that already decided to sample or not (`sentry-trace`
+  header) wins. Past quota Sentry drops spans without billing, so lower the rate
+  only if the Sentry usage page shows spans heading toward 5M a month.
 * **Logs** - error-level structlog lines only, sent as the event name plus
   the allowlisted fields in `SENTRY_LOG_ATTRIBUTES`. Free-text fields such as
   `error` stay in the local JSON log, and stdlib records never reach Sentry Logs.
