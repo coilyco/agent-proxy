@@ -1030,7 +1030,7 @@ async def _stream_chat(
         except BackendUnavailable as exc:
             failure = exc
             record_error("stream_failed", terminal_span)
-            log.warning("stream.failed", **trace_ctx.attrs(), error=str(exc), outcome="failed")
+            log.error("stream.failed", **trace_ctx.attrs(), error=str(exc), outcome="failed")
             finish = "stop"
             outcome = "failed"
         except BodyCaptureError:
@@ -1334,7 +1334,7 @@ async def _chat_completions(
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="context-truncated",
                 error=str(exc),
@@ -1376,7 +1376,7 @@ async def _chat_completions(
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="deadline-exceeded",
                 error=str(exc),
@@ -1396,7 +1396,7 @@ async def _chat_completions(
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="failed",
                 error=str(exc),
@@ -1496,7 +1496,7 @@ def _systemone_failed(
     log_on_span(
         request_span,
         "request.completed",
-        "warning",
+        "error" if status >= 500 else "warning",
         **trace_ctx.attrs(),
         outcome=metric_outcome,
         error=message,
@@ -1611,7 +1611,7 @@ async def _systemone(body: dict[str, Any], headers) -> Response:
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "warning" if rejected else "error",
                 **trace_ctx.attrs(),
                 outcome=metric_outcome,
                 upstream_status=reply.status_code,
@@ -1958,7 +1958,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="context-truncated",
                 error=str(exc),
@@ -2000,7 +2000,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="deadline-exceeded",
                 error=str(exc),
@@ -2020,7 +2020,7 @@ async def _completions(body: dict[str, Any], headers) -> Response:
             log_on_span(
                 request_span,
                 "request.completed",
-                "warning",
+                "error",
                 **trace_ctx.attrs(),
                 outcome="failed",
                 error=str(exc),

@@ -88,3 +88,24 @@ continues beneath it. HTTPX then carries that same context into LiteLLM. Body
 capture remains off unless `PROXY_TRACE_BODIES` is explicitly enabled. When it
 is enabled, the request span owns the strict complete request and response
 capture contract below.
+
+## Sentry
+
+Sentry carries three things, all off when no DSN is configured:
+
+* **Errors** - unhandled crashes only, with no per-minute cap. The Team plan
+  budget (50k errors a month) is the limit, and handled failures stay in SigNoz.
+* **Traces** - Sentry's own FastAPI spans, kept at `PROXY_SENTRY_TRACES_SAMPLE_RATE`
+  (default 0.05). Health, readiness and metrics paths are never traced, and a
+  caller that already decided to sample or not (`sentry-trace` header) wins. The
+  rate is provisional. It was set from the 5M span monthly budget, not from a
+  measured request count, so size it against the Sentry usage page after a week.
+* **Logs** - error-level structlog lines only, sent as the event name plus
+  the allowlisted fields in `SENTRY_LOG_ATTRIBUTES`. Free-text fields such as
+  `error` stay in the local JSON log, and stdlib records never reach Sentry Logs.
+
+The terminal failures that are the proxy's own (all backends failed, a missed
+deadline, truncated context, a failed stream, an upstream 5xx) log at error. A
+caller-caused refusal stays at warning. Model text is kept out of all three by
+the key scrubber (`SENTRY_USER_DATA_KEYS`), by dropping `request.data` from a
+trace, and by the log allowlist.

@@ -5,6 +5,7 @@ import logging
 
 import pytest
 
+from app import obs
 from app.obs import (
     InstrumentedAction,
     _HealthNoiseFilter,
@@ -272,17 +273,6 @@ def test_init_sentry_no_dsn_is_noop(monkeypatch):
         config.get_settings.cache_clear()
 
 
-def test_sentry_budget_caps_events_per_process_minute(monkeypatch):
-    from app import obs
-
-    monkeypatch.setattr(obs, "_sentry_window", [])
-    allowed = [obs._sentry_within_budget(100.0) for _ in range(obs.SENTRY_EVENTS_PER_MINUTE + 1)]
-    assert allowed.count(True) == obs.SENTRY_EVENTS_PER_MINUTE
-    assert allowed[-1] is False
-    # A minute later the window has drained and events flow again.
-    assert obs._sentry_within_budget(161.0) is True
-
-
 def test_sentry_sdk_is_installed_and_initialises(monkeypatch):
     # The package was once absent from the image and the import failure was
     # swallowed, so a configured DSN reported nothing.
@@ -336,8 +326,15 @@ class _SentryCapture:
                 event = envelope.get_event()
                 if event is not None:
                     self.events.append(event)
+                for item in envelope.items:
+                    if item.type == "transaction":
+                        self.transactions.append(item.payload.json)
+                    elif item.type == "log":
+                        self.logs.extend(item.payload.json["items"])
 
         self.events: list[dict] = []
+        self.transactions: list[dict] = []
+        self.logs: list[dict] = []
         self.transport = _T()
 
 
@@ -352,8 +349,7 @@ def sentry_capture(monkeypatch):
     monkeypatch.setattr(
         sentry_sdk, "init", lambda **kwargs: real_init(transport=capture.transport, **kwargs)
     )
-    monkeypatch.setattr(obs, "_sentry_window", [])
-    obs._configure_sentry("https://public@example.invalid/1", "agent-proxy-test")
+    obs._configure_sentry("https://public@example.invalid/1", "agent-proxy-test", 1.0)
     yield capture
     real_init()
 
@@ -369,6 +365,14 @@ def _crash_app():
         messages = request["messages"]  # noqa: F841
         logging.getLogger("app.test").warning("routing request")
         raise RuntimeError("route crashed")
+
+    @app.post("/ok")
+    async def ok(request: dict):
+        return {"ok": True}
+
+    @app.get("/healthz")
+    async def healthz():
+        return {"status": "ok"}
 
     @app.get("/handled")
     async def handled():
@@ -495,3 +499,136 @@ def test_two_crashes_each_carry_their_own_trace_id(sentry_capture):
     server_traces = {f"{span.context.trace_id:032x}" for span in exporter.get_finished_spans()}
     assert len(seen) == 2 and len(set(seen)) == 2
     assert set(seen) <= server_traces
+
+
+def test_sentry_has_no_per_minute_event_cap(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    for _ in range(30):
+        assert client.post("/crash", json={"model": "m", "messages": []}).status_code == 500
+    sentry_sdk.flush()
+    assert len(sentry_capture.events) == 30
+
+
+def test_a_request_is_a_sentry_trace_that_carries_no_model_text(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    secret = "-".join(["PROMPT", "SECRET"])
+    body = {"model": "chat/default", "messages": [{"role": "user", "content": secret}]}
+    assert client.post("/ok", json=body).status_code == 200
+    sentry_sdk.flush()
+    (transaction,) = sentry_capture.transactions
+    assert transaction["transaction"] == "/ok"
+    assert "data" not in transaction["request"]
+    assert secret not in json.dumps(transaction)
+
+
+def test_a_plain_text_body_is_dropped_from_the_trace():
+    event = {"request": {"url": "http://proxy/v1/x", "data": "PROMPT-SECRET"}}
+    assert obs._sentry_before_send_transaction(event, {}) == {
+        "request": {"url": "http://proxy/v1/x"}
+    }
+
+
+def test_health_probes_are_not_traced(sentry_capture):
+    import sentry_sdk
+    from fastapi.testclient import TestClient
+
+    client = TestClient(_crash_app(), raise_server_exceptions=False)
+    assert client.get("/healthz").status_code == 200
+    sentry_sdk.flush()
+    assert sentry_capture.transactions == []
+
+
+def test_the_trace_sampler_takes_the_rate_a_caller_decision_and_skips_health():
+    sampler = obs._make_traces_sampler(0.25)
+    assert sampler({"asgi_scope": {"path": "/v1/chat/completions"}}) == 0.25
+    assert sampler({"asgi_scope": {"path": "/readyz/chat/default"}}) == 0.0
+    assert sampler({"asgi_scope": {"path": "/metrics"}, "parent_sampled": True}) == 0.0
+    assert sampler({"asgi_scope": {"path": "/v1/x"}, "parent_sampled": True}) == 1.0
+    assert sampler({"asgi_scope": {"path": "/v1/x"}, "parent_sampled": False}) == 0.0
+
+
+def test_an_error_log_reaches_sentry_logs_with_allowlisted_fields_only(sentry_capture):
+    import sentry_sdk
+
+    secret = "-".join(["PROMPT", "SECRET"])
+    obs.log.error(
+        "stream.failed",
+        logical_model="chat/default",
+        request_id="req-1",
+        outcome="failed",
+        error=f"upstream echoed {secret}",
+        reason=secret,
+        origin=secret,
+        messages=[{"content": secret}],
+    )
+    obs.log.warning("stream.request_rejected", logical_model="chat/default")
+    sentry_sdk.flush()
+    (record,) = sentry_capture.logs
+    assert record["body"] == "stream.failed"
+    assert record["level"] == "error"
+    attributes = {k: v["value"] for k, v in record["attributes"].items()}
+    assert attributes["logical_model"] == "chat/default"
+    assert attributes["request_id"] == "req-1"
+    assert attributes["outcome"] == "failed"
+    assert not {"error", "reason", "origin", "messages"} & attributes.keys()
+    assert secret not in json.dumps(sentry_capture.logs)
+
+
+def test_stdlib_error_records_stay_out_of_sentry_logs(sentry_capture):
+    import sentry_sdk
+
+    logging.getLogger("httpx").error("upstream said PROMPT-SECRET")
+    sentry_sdk.flush()
+    assert sentry_capture.logs == []
+
+
+def test_a_log_whose_body_is_not_an_event_name_is_refused():
+    record = {"body": "free text with a prompt", "attributes": {}}
+    assert obs._sentry_before_send_log(record, {}) is None
+
+
+def test_a_failed_agent_proxy_request_is_a_sentry_trace_and_an_error_log(
+    sentry_capture, monkeypatch, app_client
+):
+    """COI-2904 acceptance: the trace and the log line, and no model text in either."""
+    import sentry_sdk
+
+    from app import models, resilience, upstream
+    from app.main import app
+    from app.upstream import UpstreamStatusError
+
+    async def fake_catalog(_base_url):
+        return {"qwen3:4b": 262144}, True
+
+    async def unavailable(*_args, **_kwargs):
+        raise UpstreamStatusError("litellm: Server error '500'", status_code=500)
+
+    monkeypatch.setattr(models, "_catalog", fake_catalog)
+    monkeypatch.setattr(upstream, "chat", unavailable)
+    monkeypatch.setattr(resilience.get_settings(), "retry_base_delay", 0.0, raising=False)
+    # Sentry wraps the stack when it is built, and the shared app's was built earlier.
+    monkeypatch.setattr(app, "middleware_stack", None)
+    models.reset_catalog()
+
+    secret = "-".join(["PROMPT", "SECRET"])
+    response = app_client.post(
+        "/v1/chat/completions",
+        json={"model": "qwen3:4b", "messages": [{"role": "user", "content": secret}]},
+    )
+    sentry_sdk.flush()
+
+    assert response.status_code == 502
+    assert [t["transaction"] for t in sentry_capture.transactions] == ["/v1/chat/completions"]
+    (record,) = [r for r in sentry_capture.logs if r["body"] == "request.completed"]
+    assert record["level"] == "error"
+    attributes = {k: v["value"] for k, v in record["attributes"].items()}
+    assert attributes["outcome"] == "failed"
+    assert attributes["agentproxy.logical_model"] == "qwen3:4b"
+    assert not {"error", "agent.origin", "gen_ai.request.model"} & attributes.keys()
+    assert secret not in json.dumps([sentry_capture.transactions, sentry_capture.logs])
