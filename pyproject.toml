@@ -51,7 +51,7 @@ agent-proxy = "app.main:main"
 agent-proxy-query = "app.trajectory.query:main"
 
 [project.urls]
-"Homepage" = "https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy"
+"Homepage" = "https://github.com/coilyco/agent-proxy"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
