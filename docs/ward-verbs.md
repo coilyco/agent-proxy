@@ -52,9 +52,8 @@ its own. The container acceptance path uses `docker` directly by design.
 `ward doctor` (ward#450) treats an empty `security:` as undeclared and also runs
 a Makefile drift check, so it does not fully pass here. This repo has no
 Makefile and runs its tooling through uv, matching
-[`.forgejo/workflows/ci.yml`](../.forgejo/workflows/ci.yml), which invoked the
-same commands through raw `uv run` because the CI runner had no ward. Forgejo
-runners retired on 2026-11-01 and this repo has no GitHub workflow yet.
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml), which runs the same
+commands as `just` verbs because the CI runner has no ward.
 
 `just <verb>` needs neither, so it is the supported entry point.
 

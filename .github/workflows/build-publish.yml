@@ -1,10 +1,11 @@
-# Publishes the immutable agent-proxy image to Forgejo OCI on every push to main
-# (agent-proxy#97), matching the build-publish lane used across the fleet.
+# Publishes the immutable agent-proxy image to GHCR on every push to main
+# (agent-proxy#97, COI-3104), matching the build-publish lane used across the fleet.
 #
 # The gate job repeats the ci.yml checks on purpose: publish must depend on a
 # green gate inside its own workflow, because separate workflows do not wait for
-# one another. No deploy stage here - rollout stays driven from
-# coilyco-bridge/deploy per the source -> deploy layer invariant.
+# one another. No deploy stage and no cluster credential here, this repo is public:
+# rollout stays driven from the private coilyco/deploy repo per the source -> deploy
+# layer invariant. Runners are hosted for the same reason (COI-3096).
 
 name: build-publish
 
@@ -22,11 +23,13 @@ concurrency:
 
 jobs:
   gate:
-    runs-on: docker
-    container:
-      image: forgejo.coilysiren.me/coilyco-flight-deck/agentic-os:release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: coilyco/agentic-os/actions/setup-ci@df1aee7cf7fd1c36c1eda3523291a76b0cdbbd35
+        with:
+          tools: just uv
       - name: Tests (just test)
         run: just test
       - name: Lint (just lint)
@@ -46,14 +49,18 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_CI_DSN }}
         run: python3 scripts/alert_sentry.py
   publish:
-    runs-on: deploy
+    runs-on: ubuntu-latest
     needs: [gate]
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Publish immutable image
         env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/publish-image.sh
       - name: Alert Sentry on main failure
         if: ${{ failure() && github.ref == 'refs/heads/main' }}
