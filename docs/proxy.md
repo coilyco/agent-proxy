@@ -99,7 +99,7 @@ secret is committed. Key knobs:
   repository implementation captures every request and response body field when
   enabled and fails hard on capture loss. The restricted ser8 deployment and
   live verification completed under
-  [issue #77](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77).
+  issue #77.
 * `PROXY_WARD_SKILL_USE_INPUT` - optional path to a ward reap archive directory
   or a single `skill-usage.json` artifact. When set, the proxy ingests it at
   startup, durably retains metadata-only trajectory observations, and increments

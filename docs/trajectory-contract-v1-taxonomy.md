@@ -48,7 +48,7 @@ Other producers and Agent Proxy calls with capture disabled remain metadata-only
 unless their own contract opts into body capture. Agent Proxy callers must not
 duplicate model payloads into their logs. Runtime enforcement and the
 restricted ser8 deployment opt-in landed under
-[issue #77](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77).
+issue #77.
 
 Model execution fact requirements are in
 [trajectory-contract-v1.md](trajectory-contract-v1.md).

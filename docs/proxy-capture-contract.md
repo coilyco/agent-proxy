@@ -24,7 +24,7 @@ content accordingly.
 The repository enforces this condition for non-streaming chat, reconstructed
 streaming chat, text completions, and MCP prompt calls. The restricted ser8
 deployment opt-in and live SigNoz verification completed under
-[issue #77](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77).
+issue #77.
 
 The stable log events, fields, and viewing flow are in
 [proxy-signoz-viewing.md](proxy-prompt-cache.md).

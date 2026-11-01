@@ -8,7 +8,7 @@ belong to the provider and to Deploy's backend selection.
 
 ## Why this exists
 
-[Issue #101](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/101)
+Issue #101
 measured a 53 KB system block sent byte-identical on all 46 turns of a window,
 against a four-byte user turn, and concluded the prefix was uncached. The proxy
 could not settle that. It read `prompt_tokens` and `completion_tokens` out of
