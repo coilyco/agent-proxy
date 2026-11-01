@@ -62,7 +62,7 @@ include = ["app*"]
 # instead of being skipped.
 asyncio_mode = "auto"
 
-# The declared dev tools are gated in CI (.forgejo/workflows/ci.yml). These three
+# The declared dev tools are gated in CI (.github/workflows/ci.yml). These three
 # blocks are the single source of truth the gate reads, so `uv run black --check .`,
 # `uv run ruff check .`, and `uv run mypy app` behave identically in CI and locally.
 [tool.black]

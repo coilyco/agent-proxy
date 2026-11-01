@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Build and publish the immutable agent-proxy image (agent-proxy#97).
-# Tag is the full commit sha, which is what coilyco-bridge/deploy resolves and
-# pulls. See docs/image-publishing.md.
+# Build and publish the immutable agent-proxy image to GHCR (agent-proxy#97).
+# Tag is the full commit sha, which is what coilyco/deploy resolves and pulls.
+# See docs/image-publishing.md.
 set -euo pipefail
 
-registry="forgejo.coilysiren.me"
-image_name="coilyco-flight-deck/agent-proxy"
+registry="ghcr.io"
+image_name="coilyco/agent-proxy"
+source_url="https://github.com/coilyco/agent-proxy"
 
 sha="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 case "${sha}" in
@@ -19,8 +20,8 @@ if [ "${#sha}" -ne 40 ]; then
   exit 1
 fi
 
-if [ -z "${REGISTRY_TOKEN:-}" ]; then
-  echo "REGISTRY_TOKEN is required for the trusted image-publish lane." >&2
+if [ -z "${REGISTRY_TOKEN:-}" ] || [ -z "${REGISTRY_USER:-}" ]; then
+  echo "REGISTRY_USER and REGISTRY_TOKEN are required for the image-publish lane." >&2
   exit 1
 fi
 
@@ -32,10 +33,11 @@ chmod 700 "${docker_config}"
 export DOCKER_CONFIG="${docker_config}"
 
 printf '%s' "${REGISTRY_TOKEN}" \
-  | docker login "${registry}" --username coilyco-ops --password-stdin
+  | docker login "${registry}" --username "${REGISTRY_USER}" --password-stdin
 
 echo "==> building ${image_name}:${sha}"
-docker build --pull -t "${image}" .
+# The source label is what links the package to this repo on GHCR.
+docker build --pull --label "org.opencontainers.image.source=${source_url}" -t "${image}" .
 
 echo "==> publishing ${image_name}:${sha}"
 docker push "${image}"

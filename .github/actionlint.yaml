@@ -1,4 +1,2 @@
 self-hosted-runner:
-  labels:
-    - docker
-    - deploy
+  labels: []

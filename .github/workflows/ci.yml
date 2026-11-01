@@ -1,28 +1,18 @@
-# Forgejo-canonical CI gate (agent-proxy#31). Runs the declared dev tooling off
+# CI gate on a GitHub-hosted runner (COI-3104). Runs the declared dev tooling off
 # pyproject.toml so every landing is gated on the same checks a contributor runs
 # locally: pytest, ruff, black --check, mypy, plus the two daemonless boot/import
 # smoke scripts.
 #
-# The jobs run in the moving :release aos dev-base image, which already ships uv, managed
-# Python, and ward. That lets CI skip `astral-sh/setup-uv` and invoke the repo's
-# declared commands directly.
-#
-# Every step is a justfile verb. The earlier form called scripts/test.sh and then
-# `.venv/bin/<tool>`, so lint, format and types silently depended on the test step
-# having built that .venv first.
+# This repo is public, so every job uses `ubuntu-latest` and never the private
+# `kai-server` runner (COI-3096): a fork pull request runs here as code from anyone.
+# Every step is a justfile verb, and setup-ci installs just and uv.
 #
 # Deliberately NOT in this gate: test-container.sh (needs a Docker daemon) and the
 # tower-dependent scripts/truncation_proof.py + scripts/reliability_loop.py (need
-# the tower reachable). Both would break a daemonless, tower-less runner. Only the
-# daemonless paths run here.
+# the tower reachable). Only the daemonless paths run here.
 #
-# Assumes this Forgejo instance has an Actions runner labelled `docker` for the
-# repo; if it does not yet, this workflow is still the correct artifact and starts
-# gating as soon as one is attached (agent-proxy#31).
-#
-# workflow_dispatch is the retry path for a main run lost to a runner egress
-# timeout: Forgejo 16 has no API rerun for push runs and the aosguard rerun verb
-# refuses them by design.
+# pre-commit is not a step: the hook pin still names the retired Forgejo host
+# (COI-3019), which no runner can clone.
 
 name: ci
 
@@ -41,11 +31,13 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: docker
-    container:
-      image: forgejo.coilysiren.me/coilyco-flight-deck/agentic-os:release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: coilyco/agentic-os/actions/setup-ci@df1aee7cf7fd1c36c1eda3523291a76b0cdbbd35
+        with:
+          tools: just uv
       - name: Tests (just test)
         run: just test
       - name: Lint (just lint)
@@ -54,7 +46,6 @@ jobs:
         run: just format-check
       - name: Types (just typecheck)
         run: just typecheck
-
       - name: Alert Sentry on main failure
         if: ${{ failure() && github.ref == 'refs/heads/main' }}
         continue-on-error: true
@@ -62,11 +53,13 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_CI_DSN }}
         run: python3 scripts/alert_sentry.py
   smoke:
-    runs-on: docker
-    container:
-      image: forgejo.coilysiren.me/coilyco-flight-deck/agentic-os:release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: coilyco/agentic-os/actions/setup-ci@df1aee7cf7fd1c36c1eda3523291a76b0cdbbd35
+        with:
+          tools: just uv
       - name: Daemonless boot probe (just boot-probe)
         run: just boot-probe
       - name: Import/build smoke (just smoke)
