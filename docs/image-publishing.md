@@ -1,6 +1,10 @@
 # Image publishing
 
-How the agent-proxy container image reaches the Forgejo OCI registry.
+How the agent-proxy container image reached the Forgejo OCI registry.
+
+**Retired with Forgejo on 2026-11-01.** The workflow and the registry no longer
+run, and this repo has no GitHub publish workflow or GHCR image. The sections
+below record the retired lane. Registry teardown is COI-2931.
 
 ## Lane
 
@@ -19,7 +23,7 @@ and could push an image whose tests never passed.
 
 ## Tag
 
-The image is `forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy:<sha>`, where
+The image was `forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy:<sha>`, where
 `<sha>` is the full 40-character commit id. The script rejects anything that is
 not lowercase hexadecimal of exactly that length, so a short sha or a branch name
 can never become a tag.

@@ -59,7 +59,7 @@ There is no Makefile. Each recipe runs its command directly through uv.
 
 ## Release
 
-This file's frontmatter declares `workflow: merge-remote-main`. Canonical history lives on Forgejo.
+This file's frontmatter declares `workflow: pull-request-and-merge`, the one lane the fleet runs. Canonical history lives on GitHub, at `https://github.com/coilyco/agent-proxy`. An issue ref such as `#77` in these docs is an archived Forgejo record.
 
 Do not claim an architecture-v2 component is landed until code and verification land, and keep [`docs/FEATURES.md`](docs/FEATURES.md) current when a shipped capability changes.
 

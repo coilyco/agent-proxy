@@ -46,7 +46,7 @@ The repository implementation acknowledges complete request and response bodies
 through paired structured-log events and canonical request-span attributes
 without silently degrading to selected fields or request-only evidence. The
 restricted ser8 deployment opt-in and live sink verification completed under
-[issue #77](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77).
+issue #77.
 Durable restricted artifact retention and trajectory-ledger content references
 remain separate cold-path work and are not implied by the operational capture
 events.

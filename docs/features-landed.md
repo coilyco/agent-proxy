@@ -30,7 +30,7 @@ Part of [FEATURES](FEATURES.md).
   text completions, and MCP prompt calls are written to paired structured events
   and request-span attributes. Capture defaults off, fails hard on field loss,
   and is enabled on ser8 against restricted SigNoz storage. See
-  [issue #77](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77).
+  issue #77.
 - **Ward correlation** - landed - request, Ward run, workflow, repository, issue, and agent-session metadata joins in logs and spans.
 - **Skill-use artifact observation** - landed - Ward reap `skill-usage.json`
   parsing durably retains metadata-only skill observations with run and

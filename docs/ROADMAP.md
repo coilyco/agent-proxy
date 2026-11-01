@@ -23,34 +23,34 @@ This roadmap is an active work graph, not a ban on later capability work. The ow
 
 ## Implementation sequence
 
-1. [#41 LiteLLM standalone versus SDK parity spike](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/41)
+1. #41 LiteLLM standalone versus SDK parity spike
    - Landed: selects the standalone LiteLLM Proxy and adds an executable surface parity runner.
    - Current reliability behavior stays until the documented live tower, key, budget, spend, context-safety, and trace gates pass.
-2. [#42 Trajectory schema package and validation fixtures](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/42)
+2. #42 Trajectory schema package and validation fixtures
    - Landed: establishes the shared executable contract independently of the retention system.
-3. [#43 Append-only ingestion and replayable raw retention](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/43)
+3. #43 Append-only ingestion and replayable raw retention
    - Depends on #42.
    - Landed: SQLite WAL retention, immutable receipt and quarantine ledgers, replay, and a bounded asynchronous emitter provide durable evidence outside the hot path.
-4. [#44 Episode and trajectory materialization](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/44)
+4. #44 Episode and trajectory materialization
    - Depends on #42 and #43.
    - Landed: deterministically joins retained events, exposes partial and late state, and appends provenance-preserving derived revisions.
-5. [#45 Evaluation and annotation records](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/45)
+5. #45 Evaluation and annotation records
    - Depends on #42 and #44.
    - Landed: evaluator, verifier, annotation, and human-intervention records append immutable evidence without changing Ward authority.
-6. [#46 Versioned training and held-out evaluation exports](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/46)
+6. #46 Versioned training and held-out evaluation exports
    - Depends on #44 and #45.
    - Landed: reproducible SFT, preference, verifier, reward, and held-out evaluation artifacts use write-once provenance manifests and trajectory-level splits.
-7. [#47 Operational queries, Ward dossier inputs, and harness-fit views](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/47)
+7. #47 Operational queries, Ward dossier inputs, and harness-fit views
    - Depends on #43, #44, and #45.
    - Landed: exposes governed operational evidence, OTLP joins, harness-fit comparisons, and evidence-only dossier inputs without moving authority out of Ward.
 
 ## Producer follow-through
 
-- [#51 Agent-compose evidence](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/51) - landed - maps immutable manifests and public-safe selection traces without copying context bodies.
-- [#52 Guard evidence](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/52) - landed - maps cli-guard audit rows and specgen policy snapshots without retaining sensitive arguments, diagnostics, paths, or hosts.
-- [#54 Ward skill-use evidence](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/54) - landed - persists normalized reap artifacts while preserving log and metric projections.
-- [#55 Request lifecycle evidence](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/55) - landed - adds opt-in bounded action and terminal execution emission without storage waits or body capture.
-- [#77 Opt-in full-I/O capture](https://forgejo.coilysiren.me/coilyco-flight-deck/agent-proxy/issues/77) - landed - captures every field in complete normalized request and response bodies without allowing selected-field or request-only degradation, with the restricted ser8 deployment and live SigNoz proof complete.
+- #51 Agent-compose evidence - landed - maps immutable manifests and public-safe selection traces without copying context bodies.
+- #52 Guard evidence - landed - maps cli-guard audit rows and specgen policy snapshots without retaining sensitive arguments, diagnostics, paths, or hosts.
+- #54 Ward skill-use evidence - landed - persists normalized reap artifacts while preserving log and metric projections.
+- #55 Request lifecycle evidence - landed - adds opt-in bounded action and terminal execution emission without storage waits or body capture.
+- #77 Opt-in full-I/O capture - landed - captures every field in complete normalized request and response bodies without allowing selected-field or request-only degradation, with the restricted ser8 deployment and live SigNoz proof complete.
 
 ## Delivery rules
 
