@@ -58,6 +58,8 @@ or this file.
   - `direct` - tower `/v1` (`qwen3-coder:30b`), no `num_ctx` (the opencode/crush shape).
   - `proxy` - local proxy, same real tag (`qwen3-coder:30b`), derived `num_ctx`
     injected (issue #32: the `fast-think` alias was retired).
+  - `both` - `direct` then `proxy` in one invocation, printing the
+    baseline-to-after comparison. This is the M2 measurement shape.
 
 ## Results
 

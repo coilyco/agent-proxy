@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """Concurrency burst probe: does Agent Proxy queue, shed, or neither (issue #107).
 
-Issue #105 measured sub-5ms admission delay and could not tell three
-explanations apart, because at 0.0047 req/s an empty queue is the expected
-result whether queueing is live or inert. One burst separates them, and this is
-the client half of that run.
-
-It issues real model calls and costs real tokens, so it refuses to start
-without ``--yes``. Read docs/burst-probe.md before running it, and in particular
-do not run it while the rate limiter is enabled or it measures the limiter
-rather than admission.
+The client half of the burst run that separates the three explanations #105
+could not. It issues real model calls and costs real tokens, so it refuses to
+start without ``--yes``. Read docs/burst-probe.md before running it, and do not
+run it while the rate limiter is enabled.
 """
 
 from __future__ import annotations

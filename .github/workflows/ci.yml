@@ -1,18 +1,5 @@
-# CI gate on a GitHub-hosted runner (COI-3104). Runs the declared dev tooling off
-# pyproject.toml so every landing is gated on the same checks a contributor runs
-# locally: pytest, ruff, black --check, mypy, plus the two daemonless boot/import
-# smoke scripts.
-#
-# This repo is public, so every job uses `ubuntu-latest` and never the private
-# `kai-server` runner (COI-3096): a fork pull request runs here as code from anyone.
-# Every step is a justfile verb, and setup-ci installs just and uv.
-#
-# Deliberately NOT in this gate: test-container.sh (needs a Docker daemon) and the
-# tower-dependent scripts/truncation_proof.py + scripts/reliability_loop.py (need
-# the tower reachable). Only the daemonless paths run here.
-#
-# pre-commit is not a step: the hook pin still names the retired Forgejo host
-# (COI-3019), which no runner can clone.
+# CI gate on a GitHub-hosted runner (COI-3104): pytest, ruff, black, mypy, smoke scripts.
+# Why it is shaped this way and what it leaves out: docs/image-publishing.md
 
 name: ci
 

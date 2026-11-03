@@ -1,20 +1,10 @@
-"""
-Resilience policies (leg 02 "resilience policies", leg 04 step 4).
+"""Resilience policies (leg 02, leg 04 step 4).
 
-Wraps upstream dispatch with:
+Wraps upstream dispatch with response validation, retry with backoff, a fallback
+chain across backends, and a per-backend circuit breaker. Transport and HTTP
+errors count against a breaker, a bad generation only triggers a reroll.
 
-* **response validation** - non-empty, tool-call JSON parses, no degenerate
-  repetition / truncation garbage.
-* **retry with backoff** - a capricious single bad generation becomes a reroll,
-  not a user-visible failure (``llm_retries_total``).
-* **fallback chain** - a down or busy backend advances to the next backend in the
-  logical model's chain (``llm_fallbacks_total``).
-* **per-backend circuit breaker** - stops hammering a dead backend and protects
-  tail latency (``llm_circuit_state``).
-
-Transport/HTTP errors count against a backend's breaker; a merely bad generation
-does not (the backend is alive, the token draw was unlucky) but still triggers a
-reroll.
+Policy detail and metric names: docs/upstream-error-classification.md.
 """
 
 from __future__ import annotations

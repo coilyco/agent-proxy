@@ -68,6 +68,13 @@ start`, which still works and now agrees with the simpler number.
 - neither → admission control lives only in the caller, and both of the above
   are moot
 
+## Why this probe exists
+
+Issue #105 measured sub-5ms admission delay and could not tell three
+explanations apart, because at 0.0047 req/s an empty queue is the expected
+result whether queueing is live or inert. `scripts/burst_probe.py` is the client
+half of the run that separates them (issue #107). It issues real model calls and
+costs real tokens, so it refuses to start without `--yes`.
 ## See also
 
 - [`backend-regime.md`](backend-catalog.md) - tagging the run as idle.

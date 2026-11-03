@@ -1,12 +1,10 @@
 """Error-span contract for the SigNoz Error Management producer surface (#71).
 
 `app.obs.record_error` is the single writer of exception telemetry, and
-`tests/test_obs.py` proves the helper itself sets both the exception event and
-`StatusCode.ERROR`. What that unit coverage cannot show is whether the real
-request paths route their failures through it, and - the load-bearing half -
-whether a failure that is later retried successfully leaks an error status onto
-the surviving request span. These tests exercise the dispatch paths end to end
-against an in-memory exporter and assert both directions.
+`tests/test_obs.py` covers the helper itself. These tests run the dispatch paths
+end to end against an in-memory exporter and assert that real failures route
+through it, and that a failure later retried successfully leaks no error status
+onto the surviving request span.
 """
 
 import asyncio

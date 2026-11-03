@@ -91,3 +91,17 @@ trimmed token counts and drop count when tracing is active. Delivered-context
 truncation keeps the existing `dispatch.context_truncated` warning and metric,
 and records the same action through the wrapper so the log, metric, and span
 stay aligned.
+
+## Truncation proof
+
+`scripts/truncation_proof.py` reproduces the leg-01 truncation test through the
+proxy. It sends a ~55k-token prompt two ways and compares `prompt_eval_count`:
+
+* direct to the tower's `/v1` with no `num_ctx` (what opencode and crush do),
+  expected to cap at 32767, the silent left-truncation.
+* through the proxy with the same real ollama tag (issue #32): the proxy derives
+  a safe `num_ctx` from the model's real `context_length` and injects it, so the
+  prompt is kept (about 48k or more).
+
+Run `TOWER=<host> MODEL=qwen3-coder:30b uv run python scripts/truncation_proof.py`
+with the proxy already running locally.

@@ -46,6 +46,30 @@ private `DOCKER_CONFIG` in a temporary directory, and removes that directory on
 exit so no credential survives the job. `SENTRY_CI_DSN` is the one repository
 secret, used by the failure alert step.
 
+## Workflow shape
+
+`ci.yml` and `build-publish.yml` are the two workflows (COI-3104). Their
+file headers stay two lines and point here.
+
+* **Runners.** This repo is public, so every job uses `ubuntu-latest` and never
+  the private `kai-server` runner (COI-3096): a fork pull request runs as code
+  from anyone.
+* **ci.yml** runs the declared dev tooling off `pyproject.toml` (pytest, ruff,
+  `black --check`, mypy, and the two daemonless boot/import smoke scripts) so a
+  landing is gated on the checks a contributor runs locally. Every step is a
+  justfile verb, and `setup-ci` installs just and uv.
+* **Not in the gate.** `test-container.sh` needs a Docker daemon.
+  `scripts/truncation_proof.py` and `scripts/reliability_loop.py` need the tower
+  reachable.
+* **pre-commit is not a step.** The hook pin named the retired Forgejo host
+  (COI-3019) when this landed, and no runner could clone it. COI-3211 re-pinned
+  the managed block to GitHub, and no CI step was added.
+* **build-publish.yml** pushes the immutable image to GHCR on every push to main
+  (agent-proxy#97). Its gate job repeats the ci.yml checks on purpose, because
+  publish must depend on a green gate inside its own workflow: separate
+  workflows do not wait for one another.
+* **No deploy stage and no cluster credential.** Rollout stays driven from the
+  private coilyco/deploy repo per the source -> deploy layer invariant.
 ## See also
 
 - [`proxy.md`](proxy.md) - the request path and how to run the proxy locally.
