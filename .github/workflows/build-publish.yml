@@ -1,11 +1,5 @@
-# Publishes the immutable agent-proxy image to GHCR on every push to main
-# (agent-proxy#97, COI-3104), matching the build-publish lane used across the fleet.
-#
-# The gate job repeats the ci.yml checks on purpose: publish must depend on a
-# green gate inside its own workflow, because separate workflows do not wait for
-# one another. No deploy stage and no cluster credential here, this repo is public:
-# rollout stays driven from the private coilyco/deploy repo per the source -> deploy
-# layer invariant. Runners are hosted for the same reason (COI-3096).
+# Publishes the agent-proxy image to GHCR on every push to main (COI-3104).
+# Rationale for the gate, hosted runners, and no deploy stage: docs/image-publishing.md
 
 name: build-publish
 

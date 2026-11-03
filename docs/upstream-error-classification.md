@@ -60,6 +60,22 @@ a failure of this shape is no longer invisible to the service error rate
 (issue #106). The recorded codes are `upstream_request_rejected` and
 `upstream_5xx`, both in the [exception taxonomy](exception-taxonomy.md).
 
+## Resilience policies
+
+`app/resilience.py` wraps upstream dispatch with four policies:
+
+* **response validation** - non-empty, tool-call JSON parses, no degenerate
+  repetition or truncation garbage.
+* **retry with backoff** - a bad generation becomes a reroll
+  (`llm_retries_total`).
+* **fallback chain** - a down or busy backend advances to the next backend in the
+  logical model's chain (`llm_fallbacks_total`).
+* **per-backend circuit breaker** - stops hammering a dead backend
+  (`llm_circuit_state`).
+
+Transport and HTTP errors count against a backend's breaker. A merely bad
+generation does not (the backend is alive, the token draw was unlucky) but still
+triggers a reroll.
 ## See also
 
 - [`exception-taxonomy.md`](exception-taxonomy.md) - the closed set of codes.

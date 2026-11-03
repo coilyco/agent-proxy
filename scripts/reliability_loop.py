@@ -1,32 +1,11 @@
 #!/usr/bin/env python3
-"""Reliability harness (leg 05).
+"""Reliability harness (leg 05): scores a sustained tool-using loop usable or failed.
 
-Turns "~75%" into a reproducible number and proves the proxy lifts it. Runs a
-sustained, context-growing, tool-using loop against a target endpoint and scores
-each response *usable* vs *failed* using the proxy's own
-``resilience.validate_response`` (imported, not reimplemented). Emits a
-reliability percentage and a failure-reason histogram.
-
-Targets (all pass the same real ollama tag - issue #32, no logical alias; set it
-with the ``MODEL`` env var, default ``qwen3-coder:30b``):
-* ``direct`` - the tower's ``/v1`` with no ``num_ctx`` (the opencode/crush shape).
-* ``proxy``  - the local proxy, which derives and injects a safe ``num_ctx``.
-* ``both``   - run ``direct`` then ``proxy`` in one invocation and print the
-  baseline-to-after comparison. This is the M2 measurement shape.
-
-Durability: ``--json PATH`` writes a machine-readable artifact (stable schema:
-run shape, per-target reliability, failure histogram, per-turn detail) so a
-future before/after check re-runs the same command and diffs the JSON instead of
-re-reading a terminal scrollback. The tower FQDN is resolved at runtime and is
-never written into the artifact.
-
-Usage::
-
-    TOWER=<host> just reliability --target both --turns 6 --json out.json
-    TOWER=<host> just reliability --target proxy --turns 6
-
-(``just reliability`` and, via the unknown-verb fallback, bare
-``just reliability`` both resolve to this script; args ride after ``--``.)
+Runs against ``--target direct``, ``proxy`` or ``both`` and scores each response
+with the proxy's own ``resilience.validate_response``. Emits a reliability
+percentage and a failure histogram, and ``--json PATH`` writes the durable
+artifact. Run it as ``TOWER=<host> just reliability --target both --turns 6``.
+Target meanings and the artifact contract: docs/reliability_baseline.md.
 """
 
 from __future__ import annotations

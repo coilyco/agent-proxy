@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""Reproduce the leg-01 truncation test *through the proxy* (leg 04 "Local
-validation"). Proves the 32k cliff is gone.
+"""Reproduce the leg-01 truncation test through the proxy (leg 04 local validation).
 
-Sends a ~55k-token prompt two ways and compares ``prompt_eval_count``:
-
-* direct to the tower's ``/v1`` with no ``num_ctx`` (what opencode/crush do) -
-  expected to cap at 32767, the silent left-truncation.
-* through the proxy, passing the **same real ollama tag** (issue #32: no logical
-  alias) - the proxy derives a safe ``num_ctx`` from the model's real
-  ``context_length`` and injects it, so the prompt is kept (~48k+).
-
-Usage: ``TOWER=<host> MODEL=qwen3-coder:30b uv run python
-scripts/truncation_proof.py`` with the proxy already running locally.
+Sends a ~55k-token prompt direct to the tower and through the proxy and compares
+``prompt_eval_count``. Run it as ``TOWER=<host> MODEL=qwen3-coder:30b uv run
+python scripts/truncation_proof.py`` with the proxy already running locally.
+Expected numbers and why: docs/proxy-num-ctx.md.
 """
 
 from __future__ import annotations

@@ -1,15 +1,9 @@
 """Acceptance for the name-based resilient dispatch entry (leg 04 step 10, #14).
 
-Covers the issue's stated acceptance:
-
-* a backend that fails twice then succeeds -> result returned and
-  ``llm_retries_total`` incremented per retry,
-* a backend that always fails -> a clean ``AllBackendsFailed`` (never a hang),
-* a dead primary in a multi-backend chain -> fall back to the next backend and
-  ``llm_fallbacks_total`` incremented.
-
-The engine (``dispatch``) is exercised through ``dispatch_resilient`` so the
-tag -> catalog resolution -> chain path is proven end to end, not just the engine.
+Covers a backend that fails twice then succeeds (``llm_retries_total`` per retry),
+one that always fails (a clean ``AllBackendsFailed``, never a hang), and a dead
+primary in a multi-backend chain (fallback, ``llm_fallbacks_total``). Driven
+through ``dispatch_resilient`` so tag -> catalog -> chain is proven end to end.
 """
 
 import pytest

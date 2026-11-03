@@ -96,6 +96,17 @@ structured log - but still returns content.
 - **Tower resolution** - `PROXY_TOWER_BASE_URL` wins outright. Otherwise the
   FQDN resolves from SSM at boot and the base URL is built from it.
 
+## Why the self-verification pass is gone
+
+`app/analysis.py` once carried a pass that rejected first-person "I did the
+thing" claims with no tool-call evidence behind them. It inferred intent from a
+regex over English, so a correct turn that simply narrated its work was rerolled
+through every retry and backend and then returned a 502. A validator that
+rejects correct output is worse than no validator. The remaining checks in
+`app.resilience.validate_response` all key off structurally broken output. The
+benchmark harness keeps a `missed_toolcall` rule
+([reliability_baseline.md](reliability_baseline.md)), which is sound there
+because the harness knows out-of-band that a tool call was required.
 ## See also
 
 - [`proxy.md`](proxy.md) - the request path these settings govern.

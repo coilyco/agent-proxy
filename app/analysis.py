@@ -1,21 +1,10 @@
-"""
-Language analysis and the context-budget guard (leg 02 "language analysis",
-leg 04 step 5).
+"""Language analysis and the context-budget guard (leg 02, leg 04 step 5).
 
 Counts prompt tokens and trims prompts that would overflow a model's safe
-``num_ctx``. ``num_ctx`` injection stops the *default* 32k cliff; the budget
+``num_ctx``. ``num_ctx`` injection stops the default 32k cliff, and the budget
 guard is the backstop for a prompt that overflows even the safe ceiling.
 
-This module previously carried a self-verification pass that rejected
-first-person "I did the thing" claims with no tool-call evidence behind them.
-It was removed: the check inferred intent from a regex over English, so a
-correct turn that simply narrated its work was rerolled through every retry and
-backend and then returned a 502. A validator that rejects correct output is
-worse than no validator. The remaining checks in
-:func:`app.resilience.validate_response` all key off structurally broken output.
-The benchmark harness keeps a ``missed_toolcall`` rule
-(``scripts/reliability_loop.py``), which is sound there because the harness
-knows out-of-band that a tool call was required.
+Why the self-verification pass was removed: docs/context-budget-per-model.md.
 """
 
 from __future__ import annotations
