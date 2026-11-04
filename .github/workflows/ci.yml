@@ -57,3 +57,13 @@ jobs:
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_CI_DSN }}
         run: python3 scripts/alert_sentry.py
+  gate-required:
+    name: gate
+    needs: [quality, smoke]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail when a needed job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
