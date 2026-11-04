@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: coilyco/agentic-os/actions/setup-ci@df1aee7cf7fd1c36c1eda3523291a76b0cdbbd35
+      - uses: coilyco/.github/actions/setup-ci@b975f9dbb2a7c7dd7315f4b53dd3212c9b1e2685
         with:
           tools: just uv
       - name: Tests (just test)
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: coilyco/agentic-os/actions/setup-ci@df1aee7cf7fd1c36c1eda3523291a76b0cdbbd35
+      - uses: coilyco/.github/actions/setup-ci@b975f9dbb2a7c7dd7315f4b53dd3212c9b1e2685
         with:
           tools: just uv
       - name: Daemonless boot probe (just boot-probe)
